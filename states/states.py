@@ -1,0 +1,47 @@
+from aiogram.fsm.state import State, StatesGroup
+
+
+class PremiumOrder(StatesGroup):
+    waiting_username = State()
+
+
+class TopUp(StatesGroup):
+    waiting_amount = State()
+    waiting_receipt = State()
+
+
+class Appeal(StatesGroup):
+    waiting_message = State()
+
+
+class AdminNav(StatesGroup):
+    """Admin menyu darajalari (Orqaga tugmasi qayerga qaytishini bilish uchun)."""
+    panel = State()
+    settings = State()
+
+
+class AdminSettings(StatesGroup):
+    waiting_currency = State()
+    waiting_referral_percent = State()
+    waiting_stars_prices = State()
+    waiting_premium_prices = State()
+    waiting_card_number = State()
+    waiting_ton_wallet = State()
+    waiting_add_admin = State()
+
+
+class AdminChannel(StatesGroup):
+    waiting_add = State()
+
+
+class AdminBroadcast(StatesGroup):
+    waiting_message = State()
+
+
+class AdminUserManage(StatesGroup):
+    waiting_user_id = State()
+
+
+class AdminEmoji(StatesGroup):
+    waiting_value = State()
+    waiting_bulk = State()

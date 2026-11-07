@@ -1,0 +1,16 @@
+# Maxfiy ma'lumotlar — hech qachon GitHub'ga yuklanmasin
+.env
+.env.*
+!.env.example
+
+# Baza (foydalanuvchi ma'lumotlari)
+*.db
+*.db-wal
+*.db-shm
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.idea/
+.vscode/

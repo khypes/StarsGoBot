@@ -1,0 +1,415 @@
+"""SQLite qatlami.
+
+Bitta umumiy ulanish + yozish uchun lock ishlatiladi. Pul bilan bog'liq barcha
+amallar (xarid, bekor qilish, tasdiqlash) atomik: holat tekshiruvi va balans
+o'zgarishi bir tranzaksiyada bajariladi — qo'sh bosish / poyga holatlari bo'lmaydi.
+"""
+import asyncio
+import json
+import os
+import time
+
+import aiosqlite
+
+from config import DB_PATH, SUPER_ADMIN_ID, DEFAULT_STARS_PRICES, DEFAULT_PREMIUM_PRICES
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT,
+    full_name TEXT,
+    balance INTEGER DEFAULT 0,
+    referrer_id INTEGER,
+    is_banned INTEGER DEFAULT 0,
+    joined_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    order_type TEXT,          -- 'stars' | 'premium'
+    detail TEXT,
+    price INTEGER,
+    status TEXT DEFAULT 'kutilmoqda',  -- kutilmoqda | bajarildi | bekor qilindi
+    created_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    amount INTEGER,
+    kind TEXT,                 -- 'topup' | 'referral_bonus' | 'admin_adjust'
+    status TEXT DEFAULT 'kutilmoqda',  -- kutilmoqda | tasdiqlandi | rad etildi
+    note TEXT,
+    created_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS admins (
+    user_id INTEGER PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT,
+    title TEXT,
+    url TEXT
+);
+
+CREATE TABLE IF NOT EXISTS emojis (
+    key TEXT PRIMARY KEY,
+    custom_id TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_users_ref ON users(referrer_id);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+"""
+
+_DEFAULT_SETTINGS = {
+    "currency": "so'm",
+    "referral_percent": "5",
+    "card_number": "",
+    "ton_wallet": "",
+    "order_notify": "1",
+    "premium_emoji_enabled": "1",
+    "stars_prices": json.dumps(DEFAULT_STARS_PRICES, ensure_ascii=False),
+    "premium_prices": json.dumps(DEFAULT_PREMIUM_PRICES, ensure_ascii=False),
+}
+
+_db: aiosqlite.Connection | None = None
+_lock = asyncio.Lock()
+
+
+async def init_db():
+    global _db
+    folder = os.path.dirname(os.path.abspath(DB_PATH))
+    os.makedirs(folder, exist_ok=True)
+    _db = await aiosqlite.connect(DB_PATH)
+    _db.row_factory = aiosqlite.Row
+    await _db.execute("PRAGMA journal_mode=WAL")
+    await _db.execute("PRAGMA synchronous=NORMAL")
+    await _db.execute("PRAGMA busy_timeout=5000")
+    await _db.executescript(_SCHEMA)
+    for k, v in _DEFAULT_SETTINGS.items():
+        await _db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+    if SUPER_ADMIN_ID:
+        await _db.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (SUPER_ADMIN_ID,))
+    await _db.commit()
+
+
+async def close_db():
+    global _db
+    if _db is not None:
+        await _db.close()
+        _db = None
+
+
+async def _one(sql: str, params=()):
+    cur = await _db.execute(sql, params)
+    return await cur.fetchone()
+
+
+async def _all(sql: str, params=()):
+    cur = await _db.execute(sql, params)
+    return await cur.fetchall()
+
+
+async def _write(sql: str, params=()):
+    """Bitta yozish amali. (rowcount, lastrowid) qaytaradi."""
+    async with _lock:
+        cur = await _db.execute(sql, params)
+        await _db.commit()
+        return cur.rowcount, cur.lastrowid
+
+
+# ---------- users ----------
+
+async def get_user(user_id: int):
+    return await _one("SELECT * FROM users WHERE user_id=?", (user_id,))
+
+
+async def get_user_by_username(username: str):
+    return await _one("SELECT * FROM users WHERE lower(username)=lower(?)", (username.lstrip("@"),))
+
+
+async def create_user_if_not_exists(user_id: int, username: str, full_name: str, referrer_id: int | None):
+    """(user, is_new). Mavjud foydalanuvchining ism/username'i yangilanadi."""
+    async with _lock:
+        existing = await _one("SELECT * FROM users WHERE user_id=?", (user_id,))
+        if existing:
+            if existing["username"] != username or existing["full_name"] != full_name:
+                await _db.execute(
+                    "UPDATE users SET username=?, full_name=? WHERE user_id=?",
+                    (username, full_name, user_id),
+                )
+                await _db.commit()
+            return await _one("SELECT * FROM users WHERE user_id=?", (user_id,)), False
+        if referrer_id == user_id:
+            referrer_id = None
+        if referrer_id is not None:
+            ref = await _one("SELECT 1 FROM users WHERE user_id=?", (referrer_id,))
+            if not ref:
+                referrer_id = None
+        await _db.execute(
+            "INSERT INTO users (user_id, username, full_name, balance, referrer_id, joined_at) "
+            "VALUES (?, ?, ?, 0, ?, ?)",
+            (user_id, username, full_name, referrer_id, int(time.time())),
+        )
+        await _db.commit()
+        return await _one("SELECT * FROM users WHERE user_id=?", (user_id,)), True
+
+
+async def adjust_balance(user_id: int, delta: int) -> bool:
+    """Admin tomonidan balansni o'zgartirish. Balans manfiy bo'lmaydi."""
+    rc, _ = await _write(
+        "UPDATE users SET balance = MAX(balance + ?, 0) WHERE user_id=?", (delta, user_id)
+    )
+    return rc == 1
+
+
+async def set_ban(user_id: int, banned: bool):
+    await _write("UPDATE users SET is_banned=? WHERE user_id=?", (1 if banned else 0, user_id))
+
+
+async def all_user_ids():
+    rows = await _all("SELECT user_id FROM users WHERE is_banned=0")
+    return [r[0] for r in rows]
+
+
+async def user_count():
+    return (await _one("SELECT COUNT(*) FROM users"))[0]
+
+
+async def referral_count(user_id: int):
+    return (await _one("SELECT COUNT(*) FROM users WHERE referrer_id=?", (user_id,)))[0]
+
+
+# ---------- orders ----------
+
+async def purchase(user_id: int, order_type: str, detail: str, price: int) -> int | None:
+    """Balansdan yechib, buyurtma yaratadi. Mablag' yetmasa None."""
+    async with _lock:
+        cur = await _db.execute(
+            "UPDATE users SET balance = balance - ? WHERE user_id=? AND balance >= ?",
+            (price, user_id, price),
+        )
+        if cur.rowcount != 1:
+            await _db.commit()
+            return None
+        cur = await _db.execute(
+            "INSERT INTO orders (user_id, order_type, detail, price, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'kutilmoqda', ?)",
+            (user_id, order_type, detail, price, int(time.time())),
+        )
+        await _db.commit()
+        return cur.lastrowid
+
+
+async def get_order(order_id: int):
+    return await _one("SELECT * FROM orders WHERE id=?", (order_id,))
+
+
+async def complete_order(order_id: int):
+    """Kutilayotgan buyurtmani bajarilgan deb belgilaydi.
+
+    Birinchi bajarilgan buyurtmada referrerga bonus beriladi.
+    Qaytaradi: (order, bonus) yoki None (allaqachon ko'rib chiqilgan bo'lsa).
+    bonus = (referrer_id, amount) yoki None.
+    """
+    async with _lock:
+        cur = await _db.execute(
+            "UPDATE orders SET status='bajarildi' WHERE id=? AND status='kutilmoqda'", (order_id,)
+        )
+        if cur.rowcount != 1:
+            await _db.commit()
+            return None
+        order = await _one("SELECT * FROM orders WHERE id=?", (order_id,))
+        bonus = None
+        buyer = await _one("SELECT referrer_id FROM users WHERE user_id=?", (order["user_id"],))
+        if buyer and buyer["referrer_id"]:
+            done = (await _one(
+                "SELECT COUNT(*) FROM orders WHERE user_id=? AND status='bajarildi'",
+                (order["user_id"],),
+            ))[0]
+            if done == 1:
+                row = await _one("SELECT value FROM settings WHERE key='referral_percent'")
+                try:
+                    percent = int(row[0]) if row else 0
+                except ValueError:
+                    percent = 0
+                amount = order["price"] * percent // 100
+                if amount > 0:
+                    await _db.execute(
+                        "UPDATE users SET balance = balance + ? WHERE user_id=?",
+                        (amount, buyer["referrer_id"]),
+                    )
+                    await _db.execute(
+                        "INSERT INTO transactions (user_id, amount, kind, status, note, created_at) "
+                        "VALUES (?, ?, 'referral_bonus', 'tasdiqlandi', ?, ?)",
+                        (buyer["referrer_id"], amount, f"buyurtma #{order_id}", int(time.time())),
+                    )
+                    bonus = (buyer["referrer_id"], amount)
+        await _db.commit()
+        return order, bonus
+
+
+async def cancel_order(order_id: int):
+    """Kutilayotgan buyurtmani bekor qilib, pulni qaytaradi. Aks holda None."""
+    async with _lock:
+        cur = await _db.execute(
+            "UPDATE orders SET status='bekor qilindi' WHERE id=? AND status='kutilmoqda'", (order_id,)
+        )
+        if cur.rowcount != 1:
+            await _db.commit()
+            return None
+        order = await _one("SELECT * FROM orders WHERE id=?", (order_id,))
+        await _db.execute(
+            "UPDATE users SET balance = balance + ? WHERE user_id=?", (order["price"], order["user_id"])
+        )
+        await _db.commit()
+        return order
+
+
+async def user_orders(user_id: int, limit: int = 15):
+    return await _all("SELECT * FROM orders WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit))
+
+
+async def user_order_count(user_id: int) -> int:
+    return (await _one("SELECT COUNT(*) FROM orders WHERE user_id=?", (user_id,)))[0]
+
+
+async def order_stats():
+    row = await _one("SELECT COUNT(*), COALESCE(SUM(price),0) FROM orders WHERE status='bajarildi'")
+    pending = (await _one("SELECT COUNT(*) FROM orders WHERE status='kutilmoqda'"))[0]
+    return row[0], row[1], pending
+
+
+# ---------- transactions ----------
+
+async def create_transaction(user_id: int, amount: int, kind: str, note: str = "",
+                             status: str = "kutilmoqda") -> int:
+    _, rid = await _write(
+        "INSERT INTO transactions (user_id, amount, kind, status, note, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, amount, kind, status, note, int(time.time())),
+    )
+    return rid
+
+
+async def get_transaction(tx_id: int):
+    return await _one("SELECT * FROM transactions WHERE id=?", (tx_id,))
+
+
+async def approve_topup(tx_id: int):
+    """Kutilayotgan to'ldirishni tasdiqlaydi va balansga qo'shadi. Aks holda None."""
+    async with _lock:
+        cur = await _db.execute(
+            "UPDATE transactions SET status='tasdiqlandi' "
+            "WHERE id=? AND status='kutilmoqda' AND kind='topup'",
+            (tx_id,),
+        )
+        if cur.rowcount != 1:
+            await _db.commit()
+            return None
+        tx = await _one("SELECT * FROM transactions WHERE id=?", (tx_id,))
+        await _db.execute(
+            "UPDATE users SET balance = balance + ? WHERE user_id=?", (tx["amount"], tx["user_id"])
+        )
+        await _db.commit()
+        return tx
+
+
+async def reject_topup(tx_id: int):
+    rc, _ = await _write(
+        "UPDATE transactions SET status='rad etildi' "
+        "WHERE id=? AND status='kutilmoqda' AND kind='topup'",
+        (tx_id,),
+    )
+    return await get_transaction(tx_id) if rc == 1 else None
+
+
+# ---------- settings ----------
+
+async def get_setting(key: str) -> str:
+    row = await _one("SELECT value FROM settings WHERE key=?", (key,))
+    return row[0] if row else ""
+
+
+async def set_setting(key: str, value: str):
+    await _write(
+        "INSERT INTO settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, value),
+    )
+
+
+async def get_stars_prices():
+    return json.loads(await get_setting("stars_prices") or "[]")
+
+
+async def get_premium_prices():
+    return json.loads(await get_setting("premium_prices") or "[]")
+
+
+# ---------- admins ----------
+
+async def is_admin(user_id: int) -> bool:
+    if user_id == SUPER_ADMIN_ID:
+        return True
+    return (await _one("SELECT 1 FROM admins WHERE user_id=?", (user_id,))) is not None
+
+
+async def add_admin(user_id: int):
+    await _write("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
+
+
+async def remove_admin(user_id: int) -> bool:
+    if user_id == SUPER_ADMIN_ID:
+        return False
+    await _write("DELETE FROM admins WHERE user_id=?", (user_id,))
+    return True
+
+
+async def list_admins():
+    return [r[0] for r in await _all("SELECT user_id FROM admins")]
+
+
+# ---------- mandatory channels ----------
+
+async def add_channel(chat_id: str, title: str, url: str):
+    await _write("INSERT INTO channels (chat_id, title, url) VALUES (?, ?, ?)", (chat_id, title, url))
+
+
+async def remove_channel(channel_id: int):
+    await _write("DELETE FROM channels WHERE id=?", (channel_id,))
+
+
+async def list_channels():
+    return await _all("SELECT * FROM channels ORDER BY id")
+
+
+# ---------- premium emojis ----------
+
+async def get_emojis() -> dict[str, str]:
+    return {r["key"]: r["custom_id"] for r in await _all("SELECT key, custom_id FROM emojis")}
+
+
+async def set_emoji(key: str, custom_id: str):
+    await _write(
+        "INSERT INTO emojis (key, custom_id) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET custom_id=excluded.custom_id",
+        (key, custom_id),
+    )
+
+
+async def delete_emoji(key: str):
+    await _write("DELETE FROM emojis WHERE key=?", (key,))
+
+
+async def clear_emojis():
+    await _write("DELETE FROM emojis")
