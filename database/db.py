@@ -70,7 +70,23 @@ CREATE INDEX IF NOT EXISTS idx_users_ref ON users(referrer_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 """
 
+# orders jadvaliga keyin qo'shilgan ustunlar (eski bazalar ham avtomatik yangilanadi)
+_ORDER_COLUMNS = {
+    "recipient": "TEXT",
+    "quantity": "INTEGER",
+    "provider_status": "TEXT",      # NULL | sending | processing | retry | error | delivered | failed
+    "provider_order_id": "TEXT",
+    "provider_error": "TEXT",
+    "provider_attempts": "INTEGER DEFAULT 0",
+    "provider_updated": "INTEGER",
+    "provider_cost_usd": "REAL",
+    "admin_msg_id": "INTEGER",
+}
+
 _DEFAULT_SETTINGS = {
+    "coindrop_api_key": "",
+    "coindrop_enabled": "0",
+    "coindrop_markup": "10",
     "currency": "so'm",
     "referral_percent": "5",
     "card_number": "",
@@ -95,6 +111,10 @@ async def init_db():
     await _db.execute("PRAGMA synchronous=NORMAL")
     await _db.execute("PRAGMA busy_timeout=5000")
     await _db.executescript(_SCHEMA)
+    existing = {r["name"] for r in await _all("PRAGMA table_info(orders)")}
+    for col, decl in _ORDER_COLUMNS.items():
+        if col not in existing:
+            await _db.execute(f"ALTER TABLE orders ADD COLUMN {col} {decl}")
     for k, v in _DEFAULT_SETTINGS.items():
         await _db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
     if SUPER_ADMIN_ID:
@@ -191,7 +211,8 @@ async def referral_count(user_id: int):
 
 # ---------- orders ----------
 
-async def purchase(user_id: int, order_type: str, detail: str, price: int) -> int | None:
+async def purchase(user_id: int, order_type: str, detail: str, price: int,
+                   recipient: str = "", quantity: int = 0) -> int | None:
     """Balansdan yechib, buyurtma yaratadi. Mablag' yetmasa None."""
     async with _lock:
         cur = await _db.execute(
@@ -202,9 +223,9 @@ async def purchase(user_id: int, order_type: str, detail: str, price: int) -> in
             await _db.commit()
             return None
         cur = await _db.execute(
-            "INSERT INTO orders (user_id, order_type, detail, price, status, created_at) "
-            "VALUES (?, ?, ?, ?, 'kutilmoqda', ?)",
-            (user_id, order_type, detail, price, int(time.time())),
+            "INSERT INTO orders (user_id, order_type, detail, price, status, created_at, "
+            "recipient, quantity) VALUES (?, ?, ?, ?, 'kutilmoqda', ?, ?, ?)",
+            (user_id, order_type, detail, price, int(time.time()), recipient, quantity),
         )
         await _db.commit()
         return cur.lastrowid
@@ -287,6 +308,49 @@ async def order_stats():
     row = await _one("SELECT COUNT(*), COALESCE(SUM(price),0) FROM orders WHERE status='bajarildi'")
     pending = (await _one("SELECT COUNT(*) FROM orders WHERE status='kutilmoqda'"))[0]
     return row[0], row[1], pending
+
+
+# ---------- provider (Coindrop) ----------
+
+async def claim_for_provider(order_id: int) -> bool:
+    """Buyurtmani API ga yuborish uchun atomik "band qilish" — ikki marta yuborilishining oldini oladi."""
+    rc, _ = await _write(
+        "UPDATE orders SET provider_status='sending', provider_error=NULL, "
+        "provider_attempts=COALESCE(provider_attempts,0)+1, provider_updated=? "
+        "WHERE id=? AND status='kutilmoqda' "
+        "AND (provider_status IS NULL OR provider_status IN ('error','retry'))",
+        (int(time.time()), order_id),
+    )
+    return rc == 1
+
+
+async def set_provider(order_id: int, status: str, provider_order_id: str | None = None,
+                       error: str | None = None, cost: float | None = None):
+    await _write(
+        "UPDATE orders SET provider_status=?, "
+        "provider_order_id=COALESCE(?, provider_order_id), provider_error=?, "
+        "provider_cost_usd=COALESCE(?, provider_cost_usd), provider_updated=? WHERE id=?",
+        (status, provider_order_id, error, cost, int(time.time()), order_id),
+    )
+
+
+async def mark_provider_note(order_id: int, error: str):
+    """Holatni o'zgartirmasdan izohni yozadi (masalan, 'stale' belgisi)."""
+    await _write("UPDATE orders SET provider_error=? WHERE id=?", (error, order_id))
+
+
+async def provider_work(stale_before: int):
+    """Worker ishlashi kerak bo'lgan buyurtmalar."""
+    return await _all(
+        "SELECT * FROM orders WHERE status='kutilmoqda' AND ("
+        "provider_status IN ('processing','retry') "
+        "OR (provider_status='sending' AND provider_updated < ?)) ORDER BY id LIMIT 40",
+        (stale_before,),
+    )
+
+
+async def set_admin_msg(order_id: int, message_id: int):
+    await _write("UPDATE orders SET admin_msg_id=? WHERE id=?", (message_id, order_id))
 
 
 # ---------- transactions ----------

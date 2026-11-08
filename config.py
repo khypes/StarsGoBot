@@ -30,6 +30,8 @@ SUPER_ADMIN_ID = _int("SUPER_ADMIN_ID")
 # Bildirishnomalar kelishi kerak bo'lgan chat. Berilmasa — bosh adminga yuboriladi.
 ADMIN_CHAT_ID = _int("ADMIN_CHAT_ID") or SUPER_ADMIN_ID
 DB_PATH = _db_path()
+# Ixtiyoriy: Coindrop kaliti env orqali ham berilishi mumkin (admin paneldagi qiymat ustun turadi)
+COINDROP_API_KEY = (os.getenv("COINDROP_API_KEY") or "").strip()
 # Deploy paytida to'plangan xabarlarni tashlab yuborish (standart: yo'q)
 DROP_PENDING_UPDATES = (os.getenv("DROP_PENDING_UPDATES") or "0").strip() == "1"
 

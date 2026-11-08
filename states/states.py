@@ -1,8 +1,8 @@
 from aiogram.fsm.state import State, StatesGroup
 
 
-class PremiumOrder(StatesGroup):
-    waiting_username = State()
+class Purchase(StatesGroup):
+    waiting_recipient = State()
 
 
 class TopUp(StatesGroup):
@@ -12,12 +12,6 @@ class TopUp(StatesGroup):
 
 class Appeal(StatesGroup):
     waiting_message = State()
-
-
-class AdminNav(StatesGroup):
-    """Admin menyu darajalari (Orqaga tugmasi qayerga qaytishini bilish uchun)."""
-    panel = State()
-    settings = State()
 
 
 class AdminSettings(StatesGroup):
@@ -40,8 +34,14 @@ class AdminBroadcast(StatesGroup):
 
 class AdminUserManage(StatesGroup):
     waiting_user_id = State()
+    waiting_amount = State()
 
 
 class AdminEmoji(StatesGroup):
     waiting_value = State()
     waiting_bulk = State()
+
+
+class AdminCoinDrop(StatesGroup):
+    waiting_key = State()
+    waiting_markup = State()

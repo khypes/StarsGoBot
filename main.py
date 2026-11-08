@@ -6,11 +6,13 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
+import coindrop
 import emojis
+import fulfillment
 from config import BOT_TOKEN, DROP_PENDING_UPDATES, DB_PATH
 from database.db import init_db, close_db
 from fallback import EmojiFallbackMiddleware
-from handlers import admin, emoji_admin, user
+from handlers import admin, coindrop_admin, emoji_admin, user
 from middlewares import AccessMiddleware
 
 log = logging.getLogger("starsgo")
@@ -43,14 +45,19 @@ async def main():
     # Tartib muhim: admin routerlari avval (ular faqat adminlar uchun filtrlanadi)
     dp.include_router(admin.router)
     dp.include_router(emoji_admin.router)
+    dp.include_router(coindrop_admin.router)
     dp.include_router(user.router)
 
+    worker = asyncio.create_task(fulfillment.worker(bot))  # Coindrop: holatni kuzatish va qayta urinish
     try:
         await bot.delete_webhook(drop_pending_updates=DROP_PENDING_UPDATES)
         me = await bot.get_me()
         log.info("Bot ishga tushdi: @%s", me.username)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+        await coindrop.close_session()
         await bot.session.close()
         await close_db()
 

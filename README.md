@@ -8,6 +8,8 @@ aiogram 3.31 + SQLite. Barcha xabarlar `<blockquote>` ichida, har bir emoji admi
 **Foydalanuvchi:** Stars / Premium xaridi (balansdan, atomik), buyurtmalar tarixi, hisob, referal
 (do'st birinchi xarididan bonus), hisob to'ldirish (chek bilan), murojaat, qo'llanma, majburiy obuna.
 
+Butun interfeys inline: bitta xabar ichida tahrirlanib navigatsiya qilinadi.
+
 **Admin panel** («Boshqaruv»): statistika, xabar yuborish, foydalanuvchini boshqarish (balans, ban),
 to'lov rekvizitlari, kanallar, sozlamalar (valyuta, referal %, narxlar, TON, adminlar) va
 **✨ Premium emojilar**.
@@ -24,6 +26,20 @@ to'lov rekvizitlari, kanallar, sozlamalar (valyuta, referal %, narxlar, TON, adm
 Tugmalarda `icon_custom_emoji_id`, xabarlarda `<tg-emoji>` ishlatiladi (Bot API 9.4+).
 **Telegram qoidasi:** custom emoji bot xabarlarida faqat bot egasida Telegram Premium bo'lsa ishlaydi.
 Ishlamasa, bot avtomatik oddiy emojiga qaytadi — xato bermaydi.
+
+## 🔌 Coindrop.uz API (avto-yetkazish)
+
+`Boshqaruv → 🔌 Coindrop API → API kalit kiritish` (kalit: coindrop.uz → Profil → Security & API Key, `cd_...`).
+
+- Kalit tekshiriladi, avto-yetkazish yoqiladi: Stars (50–10 000) va Premium (3/6/12 oy) buyurtmalari
+  to'lovdan so'ng avtomatik `POST /orders` ga yuboriladi, holat fon workeri orqali kuzatiladi.
+- `delivered` → buyurtma bajarildi + referal bonus; `failed` → mablag' foydalanuvchiga avtomatik qaytadi.
+- Xatoda (Coindrop balansi yetmasa, kalit noto'g'ri, ...) buyurtma qo'lda rejimda qoladi, adminga xabar boradi,
+  kartada «API orqali yuborish» tugmasi chiqadi.
+- Ikki marta yuborishdan himoya: atomik band qilish, `external_ref` bo'yicha tekshiruv, API ishlayotganda
+  qo'lda bajarish yopiq.
+- «Narxlarni sinxronlash» — Coindrop narxi + ustama foiz bilan bot narxlarini yangilaydi.
+- Kalit ixtiyoriy ravishda `COINDROP_API_KEY` env orqali ham berilishi mumkin.
 
 ## Lokal ishga tushirish
 

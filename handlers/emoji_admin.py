@@ -9,10 +9,10 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup
 import database.db as db
 import emojis
 from emojis import SLOTS, GROUPS, em, ibtn
-from keyboards.admin_kb import admin_panel_kb
-from keyboards.user_kb import back_menu, grid
-from states.states import AdminEmoji, AdminNav
-from ui import Btn, IsAdmin, card, note, esc
+from keyboards.user_kb import grid
+from nav import ask, invalid, finish, render_input
+from states.states import AdminEmoji
+from ui import IsAdmin, card, esc
 
 router = Router()
 router.message.filter(IsAdmin())
@@ -50,6 +50,7 @@ def _home_kb() -> InlineKeyboardMarkup:
         rows.append([ibtn("emojis", f"{gname} ({done}/{total})", callback_data=f"em:g:{gkey}:0")])
     rows.append([ibtn("pencil", "Ommaviy kiritish", callback_data="em:bulk"),
                  ibtn("trash", "Hammasini tozalash", style="danger", callback_data="em:rst")])
+    rows.append([ibtn("back", "Orqaga", callback_data="a:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -123,17 +124,9 @@ async def _edit(call: CallbackQuery, text: str, markup: InlineKeyboardMarkup):
 
 # ==================== kirish ====================
 
-@router.message(Btn("emojis"))
-async def emojis_open(message: Message, state: FSMContext):
-    await state.clear()
-    await state.set_state(AdminNav.panel)
-    await message.answer(_home_text(), reply_markup=_home_kb())
-
-
 @router.callback_query(F.data == "em:home")
 async def cb_home(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    await state.set_state(AdminNav.panel)
     await call.answer()
     await _edit(call, _home_text(), _home_kb())
 
@@ -145,7 +138,6 @@ async def cb_group(call: CallbackQuery, state: FSMContext):
         await call.answer()
         return
     await state.clear()
-    await state.set_state(AdminNav.panel)
     await call.answer()
     text, markup = _group_view(gkey, int(page))
     await _edit(call, text, markup)
@@ -157,10 +149,13 @@ async def cb_slot(call: CallbackQuery, state: FSMContext):
     if key not in SLOTS:
         await call.answer()
         return
+    await state.clear()
     await state.set_state(AdminEmoji.waiting_value)
-    await state.update_data(slot=key, back="panel")
+    await state.update_data(slot=key, prompt_mid=call.message.message_id,
+                            prompt_cid=call.message.chat.id, back=f"em:g:{SLOTS[key][1]}:0")
     await call.answer()
     text, markup = _slot_view(key)
+    await state.update_data(prompt_text=text)
     await _edit(call, text, markup)
 
 
@@ -174,12 +169,13 @@ async def slot_receive(message: Message, state: FSMContext):
         return
     value = extract_id(message)
     if not value:
-        await message.answer(note("warn", "Premium emoji yuboring yoki 5–25 xonali ID kiriting."))
+        await invalid(message, state, "Premium emoji yuboring yoki 5–25 xonali ID kiriting.")
         return
     await db.set_emoji(key, value)
     await emojis.load()
     text, markup = _slot_view(key, flash=f"{em('done')} <b>Saqlandi!</b>")
-    await message.answer(text, reply_markup=markup)
+    await render_input(message, state, text, markup)
+    await state.update_data(prompt_text=text)
 
 
 @router.callback_query(F.data.startswith("em:del:"))
@@ -267,18 +263,17 @@ async def cb_reset(call: CallbackQuery):
 
 @router.callback_query(F.data == "em:bulk")
 async def cb_bulk(call: CallbackQuery, state: FSMContext):
-    await state.set_state(AdminEmoji.waiting_bulk)
-    await state.update_data(back="panel")
     await call.answer()
     keys = "\n".join(f"<code>{k}</code> — {SLOTS[k][2]}" for k in SLOTS)
-    await call.message.answer(
-        card("pencil", "Ommaviy kiritish",
-             "Har qatorga bittadan: <code>kalit=ID</code>",
-             "ID o'rniga <code>0</code> yozsangiz — emoji olib tashlanadi.",
-             "Masalan:\n<code>stars=5368324170671202286\npremium=5377336227997546019</code>"),
-        reply_markup=back_menu(),
-    )
-    await call.message.answer(card("emojis", "Kalitlar ro'yxati", keys, expandable=True))
+    await ask(call, state, AdminEmoji.waiting_bulk, card(
+        "pencil", "Ommaviy kiritish",
+        "Har qatorga bittadan: <code>kalit=ID</code>",
+        "ID o'rniga <code>0</code> yozsangiz — emoji olib tashlanadi.",
+        "Masalan:\n<code>stars=5368324170671202286\npremium=5377336227997546019</code>",
+        "",
+        "<b>Kalitlar:</b>\n" + keys,
+        expandable=True,
+    ), back="em:home")
 
 
 @router.message(AdminEmoji.waiting_bulk, F.text)
@@ -306,12 +301,10 @@ async def bulk_receive(message: Message, state: FSMContext):
     lines = [f"Saqlandi: <b>{saved}</b>", f"Olib tashlandi: <b>{removed}</b>"]
     if bad:
         lines += ["", "O'qilmagan qatorlar:"] + [f"<code>{esc(b)}</code>" for b in bad[:15]]
-    await state.clear()
-    await state.set_state(AdminNav.panel)
-    await message.answer(card("done" if not bad else "warn", "Natija", *lines), reply_markup=admin_panel_kb())
-    await message.answer(_home_text(), reply_markup=_home_kb())
+    flash = card("done" if not bad else "warn", "Natija", *lines)
+    await finish(message, state, _home_text(), _home_kb(), flash=flash)
 
 
 @router.message(AdminEmoji.waiting_bulk)
-async def bulk_invalid(message: Message):
-    await message.answer(note("warn", "Matn ko'rinishida <code>kalit=ID</code> yuboring."))
+async def bulk_invalid(message: Message, state: FSMContext):
+    await invalid(message, state, "Matn ko'rinishida kalit=ID yuboring.")

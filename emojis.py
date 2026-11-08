@@ -4,7 +4,7 @@ Botdagi HAR BIR emoji — bu yerda ro'yxatga olingan "slot". Admin panel orqali 
 Telegram Premium emoji ID sini biriktirish mumkin:
 
   * xabarlarda   -> <tg-emoji emoji-id="ID">⭐</tg-emoji>
-  * tugmalarda   -> InlineKeyboardButton / KeyboardButton(icon_custom_emoji_id=ID)  (Bot API 9.4+)
+  * tugmalarda   -> InlineKeyboardButton(icon_custom_emoji_id=ID)  (Bot API 9.4+)
 
 ID o'rnatilmagan yoki tizim o'chirilgan bo'lsa — oddiy (fallback) emoji ko'rsatiladi.
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 import contextvars
 import re
 
-from aiogram.types import InlineKeyboardButton, KeyboardButton
+from aiogram.types import InlineKeyboardButton
 
 GROUPS: dict[str, str] = {
     "menu": "Asosiy menyu",
@@ -52,6 +52,11 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     "ton": ("🔑", "admin", "TON hamyon"),
     "notify": ("🔔", "admin", "Bildirishnoma"),
     "admins": ("🛡", "admin", "Adminlar"),
+    "api": ("🔌", "admin", "Coindrop API"),
+    "apikey": ("🗝", "admin", "API kalit"),
+    "auto": ("⚡", "admin", "Avto-yetkazish"),
+    "refresh": ("🔄", "admin", "Yangilash"),
+    "sync": ("🔁", "admin", "Narxlarni sinxronlash"),
     # --- xabarlar va holatlar ---
     "wave": ("👋", "msg", "Salomlashish"),
     "rocket": ("🚀", "msg", "Raketa"),
@@ -78,9 +83,6 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     "prev": ("⬅️", "msg", "Oldingi"),
     "next": ("➡️", "msg", "Keyingi"),
 }
-
-# Reply/inline tugmalardagi matn (emojisiz). Handlerlar shu matn bo'yicha tugmani taniydi.
-LABELS: dict[str, str] = {k: v[2] for k, v in SLOTS.items() if v[1] in ("menu", "admin")}
 
 _custom: dict[str, str] = {}
 _enabled: bool = True
@@ -146,13 +148,9 @@ def em(key: str) -> str:
     return SLOTS[key][0]
 
 
-def rbtn(key: str, label: str | None = None) -> KeyboardButton:
-    """Reply klaviatura tugmasi."""
-    label = label or LABELS[key]
-    cid = _active_id(key)
-    if cid:
-        return KeyboardButton(text=label, icon_custom_emoji_id=cid)
-    return KeyboardButton(text=f"{SLOTS[key][0]} {label}")
+def label(key: str) -> str:
+    """Slotning tugma matni (emojisiz)."""
+    return SLOTS[key][2]
 
 
 def ibtn(key: str, label: str, style: str | None = None, **kwargs) -> InlineKeyboardButton:
@@ -162,12 +160,6 @@ def ibtn(key: str, label: str, style: str | None = None, **kwargs) -> InlineKeyb
     if cid:
         return InlineKeyboardButton(text=label, icon_custom_emoji_id=cid, **extra, **kwargs)
     return InlineKeyboardButton(text=f"{SLOTS[key][0]} {label}", **extra, **kwargs)
-
-
-def norm(text: str) -> str:
-    """Tugma matnini emojidan qat'i nazar solishtirish uchun normallashtirish."""
-    text = text.replace("’", "'").replace("ʻ", "'").replace("‘", "'").replace("`", "'")
-    return re.sub(r"^[\W_]+", "", text).strip().lower()
 
 
 # ---------- fallback uchun yordamchilar ----------
@@ -180,14 +172,11 @@ def strip_text(text: str | None) -> str | None:
 
 def strip_markup(markup):
     """Tugmalardagi icon_custom_emoji_id ni olib tashlab, oddiy emojini matnga qo'shadi."""
-    from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
+    from aiogram.types import InlineKeyboardMarkup
 
-    if isinstance(markup, InlineKeyboardMarkup):
-        field, rows = "inline_keyboard", markup.inline_keyboard
-    elif isinstance(markup, ReplyKeyboardMarkup):
-        field, rows = "keyboard", markup.keyboard
-    else:
+    if not isinstance(markup, InlineKeyboardMarkup):
         return markup, False
+    field, rows = "inline_keyboard", markup.inline_keyboard
 
     changed = False
     new_rows = []
