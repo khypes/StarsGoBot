@@ -1,3 +1,4 @@
+import contextlib
 import asyncio
 import logging
 
@@ -9,7 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import coindrop
 import emojis
 import fulfillment
-from config import BOT_TOKEN, DROP_PENDING_UPDATES, DB_PATH
+from config import BOT_TOKEN, DROP_PENDING_UPDATES, DB_PATH, DB_PERSISTENT, ADMIN_CHAT_ID
 from database.db import init_db, close_db
 from fallback import EmojiFallbackMiddleware
 from handlers import admin, coindrop_admin, emoji_admin, style_admin, user
@@ -54,6 +55,14 @@ async def main():
         await bot.delete_webhook(drop_pending_updates=DROP_PENDING_UPDATES)
         me = await bot.get_me()
         log.info("Bot ishga tushdi: @%s", me.username)
+        if not DB_PERSISTENT:
+            log.warning("BAZA DOIMIY EMAS: %s — Volume ulang!", DB_PATH)
+            with contextlib.suppress(Exception):
+                await bot.send_message(ADMIN_CHAT_ID, (
+                    "<blockquote>⚠️ <b>Baza doimiy joyda emas!</b>\n\n"
+                    "Har yangilanishdan keyin emoji ID'lari, tugma ranglari, narxlar va balanslar o'chib ketadi.\n\n"
+                    "Tuzatish: Railway → service → Settings → Volumes → mount path <code>/data</code>. "
+                    "Variables'da <code>DB_PATH</code> bo'lsa, uni o'chiring yoki <code>/data/starsgo.db</code> qiling.</blockquote>"))
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         worker.cancel()

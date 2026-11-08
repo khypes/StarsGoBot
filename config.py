@@ -30,6 +30,10 @@ SUPER_ADMIN_ID = _int("SUPER_ADMIN_ID")
 # Bildirishnomalar kelishi kerak bo'lgan chat. Berilmasa — bosh adminga yuboriladi.
 ADMIN_CHAT_ID = _int("ADMIN_CHAT_ID") or SUPER_ADMIN_ID
 DB_PATH = _db_path()
+# Railway'da baza Volume ichida bo'lmasa, har deployda o'chib ketadi
+_VOL = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").strip()
+ON_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
+DB_PERSISTENT = (not ON_RAILWAY) or bool(_VOL and os.path.abspath(DB_PATH).startswith(os.path.abspath(_VOL)))
 # Ixtiyoriy: Coindrop kaliti env orqali ham berilishi mumkin (admin paneldagi qiymat ustun turadi)
 COINDROP_API_KEY = (os.getenv("COINDROP_API_KEY") or "").strip()
 # Deploy paytida to'plangan xabarlarni tashlab yuborish (standart: yo'q)
