@@ -232,7 +232,9 @@ async def _finalize_delivered(bot: Bot, order_id: int) -> None:
         with contextlib.suppress(Exception):
             await bot.send_message(order["user_id"], card(
                 "done", f"Buyurtma #{order_id} bajarildi",
-                f"{esc(order['detail'])} muvaffaqiyatli yetkazildi!",
+                f"{esc(order['detail'])} muvaffaqiyatli yetkazildi.",
+                "",
+                "Xaridingiz uchun rahmat! Yana kutib qolamiz.",
             ))
         if bonus:
             with contextlib.suppress(Exception):
@@ -249,7 +251,10 @@ async def _finalize_failed(bot: Bot, order_id: int) -> None:
         with contextlib.suppress(Exception):
             await bot.send_message(order["user_id"], card(
                 "cancel", f"Buyurtma #{order_id} bajarilmadi",
-                f"{esc(order['detail'])}", "Mablag' balansingizga qaytarildi. Qayta urinib ko'rishingiz mumkin.",
+                f"{esc(order['detail'])}",
+                "",
+                "Texnik sabab bilan buyurtmani yetkazib bo'lmadi. Mablag' balansingizga to'liq qaytarildi.",
+                "Username to'g'riligini tekshirib, qayta buyurtma bering.",
             ))
         await notify_admin(bot, card(
             "warn", f"Buyurtma #{order_id}: provayder bajara olmadi",

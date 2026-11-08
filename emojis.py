@@ -27,8 +27,8 @@ GROUPS: dict[str, str] = {
 # key: (oddiy emoji, guruh, tavsif)
 SLOTS: dict[str, tuple[str, str, str]] = {
     # --- asosiy menyu tugmalari ---
-    "stars": ("⭐", "menu", "Stars"),
-    "premium": ("🎁", "menu", "Premium"),
+    "stars": ("⭐", "menu", "Stars olish"),
+    "premium": ("🎁", "menu", "Premium olish"),
     "orders": ("📦", "menu", "Buyurtmalarim"),
     "account": ("👤", "menu", "Mening hisobim"),
     "topup": ("💰", "menu", "Hisob to'ldirish"),
@@ -49,7 +49,6 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     "ref_percent": ("👥", "admin", "Referal foizi"),
     "stars_prices": ("🌟", "admin", "Stars narxlari"),
     "premium_prices": ("💎", "admin", "Premium narxlari"),
-    "ton": ("🔑", "admin", "TON hamyon"),
     "notify": ("🔔", "admin", "Bildirishnoma"),
     "admins": ("🛡", "admin", "Adminlar"),
     "api": ("🔌", "admin", "Coindrop API"),
@@ -57,6 +56,7 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     "auto": ("⚡", "admin", "Avto-yetkazish"),
     "refresh": ("🔄", "admin", "Yangilash"),
     "sync": ("🔁", "admin", "Narxlarni sinxronlash"),
+    "palette": ("🎨", "admin", "Tugma ranglari"),
     # --- xabarlar va holatlar ---
     "wave": ("👋", "msg", "Salomlashish"),
     "rocket": ("🚀", "msg", "Raketa"),
@@ -82,8 +82,38 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     "test": ("🧪", "msg", "Sinash"),
     "prev": ("⬅️", "msg", "Oldingi"),
     "next": ("➡️", "msg", "Keyingi"),
+    "info": ("ℹ️", "msg", "Izoh / maslahat"),
+    "name": ("🪪", "msg", "Ism / egasi"),
 }
 
+# ---- tugma ranglari (Bot API 9.4: primary=ko'k, success=yashil, danger=qizil) ----
+STYLE_NAMES: dict[str, tuple[str, str]] = {
+    "primary": ("🔵", "Ko'k"),
+    "success": ("🟢", "Yashil"),
+    "danger": ("🔴", "Qizil"),
+    "none": ("⚪", "Rangsiz"),
+}
+
+# Tugma "kalit"lari (emoji slotlari bilan bir xil), ranglar shu kalit bo'yicha belgilanadi
+DEFAULT_STYLES: dict[str, str] = {
+    "stars": "primary", "premium": "primary", "topup": "success", "panel": "danger",
+    "stats": "primary", "broadcast": "primary", "payment": "success", "api": "primary",
+    "apikey": "primary", "auto": "success", "sync": "primary", "emojis": "primary", "palette": "primary",
+    "done": "success", "cancel": "danger", "ban": "danger", "trash": "danger", "plus": "success",
+    "calendar": "primary",
+}
+
+# Rang berish mumkin bo'lgan tugmalar guruhlari
+STYLE_GROUPS: dict[str, tuple[str, list[str]]] = {
+    "menu": ("Asosiy menyu", ["stars", "premium", "account", "topup", "orders", "referral", "appeal", "guide", "panel"]),
+    "admin": ("Admin menyu", ["stats", "broadcast", "users", "payment", "channels", "settings", "api", "emojis",
+                              "palette", "currency", "ref_percent", "stars_prices", "premium_prices", "notify",
+                              "admins", "apikey", "auto", "refresh", "sync"]),
+    "actions": ("Amal tugmalari", ["done", "cancel", "back", "plus", "trash", "ban", "calendar", "megaphone",
+                                   "prev", "next"]),
+}
+
+_styles: dict[str, str] = {}
 _custom: dict[str, str] = {}
 _enabled: bool = True
 
@@ -104,6 +134,8 @@ async def load() -> None:
     stored = await db.get_emojis()
     _custom = {k: v for k, v in stored.items() if k in SLOTS}
     _enabled = (await db.get_setting("premium_emoji_enabled")) != "0"
+    global _styles
+    _styles = {k: v for k, v in (await db.get_styles()).items() if v in STYLE_NAMES}
 
 
 def is_enabled() -> bool:
@@ -112,6 +144,15 @@ def is_enabled() -> bool:
 
 def custom_ids() -> dict[str, str]:
     return dict(_custom)
+
+
+def style_of(key: str) -> str:
+    """Tugmaning joriy rangi (primary|success|danger|none)."""
+    return _styles.get(key) or DEFAULT_STYLES.get(key) or "none"
+
+
+def style_overrides() -> dict[str, str]:
+    return dict(_styles)
 
 
 def count_set() -> int:
@@ -155,7 +196,8 @@ def label(key: str) -> str:
 
 def ibtn(key: str, label: str, style: str | None = None, **kwargs) -> InlineKeyboardButton:
     """Inline tugma (callback_data=... yoki url=...)."""
-    extra = {"style": style} if style else {}
+    effective = _styles.get(key) or style or DEFAULT_STYLES.get(key)
+    extra = {"style": effective} if effective and effective != "none" else {}
     cid = _active_id(key)
     if cid:
         return InlineKeyboardButton(text=label, icon_custom_emoji_id=cid, **extra, **kwargs)

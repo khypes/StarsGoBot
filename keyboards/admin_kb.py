@@ -14,7 +14,7 @@ def admin_home_kb() -> InlineKeyboardMarkup:
         [_b("users", "a:users"), _b("payment", "a:pay")],
         [_b("channels", "a:ch"), _b("settings", "a:set")],
         [_b("api", "a:cd", style="primary")],
-        [_b("emojis", "em:home")],
+        [_b("emojis", "em:home"), _b("palette", "col:home")],
         [ibtn("back", "Bosh menyu", callback_data="m:home")],
     ])
 
@@ -37,7 +37,7 @@ def settings_kb(notify_on: bool) -> InlineKeyboardMarkup:
 def payment_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [ibtn("payment", "Karta raqami", callback_data="p:card"),
-         ibtn("ton", "TON hamyon", callback_data="p:ton")],
+         ibtn("name", "Karta egasi", callback_data="p:holder")],
         [ibtn("back", "Orqaga", callback_data="a:home")],
     ])
 

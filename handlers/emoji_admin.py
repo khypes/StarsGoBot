@@ -218,7 +218,7 @@ async def cb_test(call: CallbackQuery, bot: Bot):
             call.message.chat.id,
             f"{em(key)} Matn ichidagi Premium emoji",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                ibtn(key, "Tugmadagi Premium emoji", callback_data="em:noop")
+                ibtn(key, "Yopish", callback_data="em:close")
             ]]),
         )
         await call.answer("Sinov xabari yuborildi. Emoji animatsiyali ko'rinsa — hammasi ishlayapti.", show_alert=True)
@@ -235,9 +235,11 @@ async def cb_test(call: CallbackQuery, bot: Bot):
         emojis.NO_FALLBACK.reset(token)
 
 
-@router.callback_query(F.data == "em:noop")
-async def cb_noop(call: CallbackQuery):
+@router.callback_query(F.data == "em:close")
+async def cb_close(call: CallbackQuery):
     await call.answer()
+    with contextlib.suppress(Exception):
+        await call.message.delete()
 
 
 @router.callback_query(F.data == "em:rst")

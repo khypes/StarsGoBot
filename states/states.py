@@ -20,7 +20,7 @@ class AdminSettings(StatesGroup):
     waiting_stars_prices = State()
     waiting_premium_prices = State()
     waiting_card_number = State()
-    waiting_ton_wallet = State()
+    waiting_card_holder = State()
     waiting_add_admin = State()
 
 

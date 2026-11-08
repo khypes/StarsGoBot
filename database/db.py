@@ -65,6 +65,11 @@ CREATE TABLE IF NOT EXISTS emojis (
     custom_id TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS button_styles (
+    key TEXT PRIMARY KEY,
+    style TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_ref ON users(referrer_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -90,7 +95,7 @@ _DEFAULT_SETTINGS = {
     "currency": "so'm",
     "referral_percent": "5",
     "card_number": "",
-    "ton_wallet": "",
+    "card_holder": "",
     "order_notify": "1",
     "premium_emoji_enabled": "1",
     "stars_prices": json.dumps(DEFAULT_STARS_PRICES, ensure_ascii=False),
@@ -473,6 +478,26 @@ async def set_emoji(key: str, custom_id: str):
 
 async def delete_emoji(key: str):
     await _write("DELETE FROM emojis WHERE key=?", (key,))
+
+
+async def get_styles() -> dict[str, str]:
+    return {r["key"]: r["style"] for r in await _all("SELECT key, style FROM button_styles")}
+
+
+async def set_style(key: str, style: str):
+    await _write(
+        "INSERT INTO button_styles (key, style) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET style=excluded.style",
+        (key, style),
+    )
+
+
+async def delete_style(key: str):
+    await _write("DELETE FROM button_styles WHERE key=?", (key,))
+
+
+async def clear_styles():
+    await _write("DELETE FROM button_styles")
 
 
 async def clear_emojis():

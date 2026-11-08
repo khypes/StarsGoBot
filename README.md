@@ -11,8 +11,14 @@ aiogram 3.31 + SQLite. Barcha xabarlar `<blockquote>` ichida, har bir emoji admi
 Butun interfeys inline: bitta xabar ichida tahrirlanib navigatsiya qilinadi.
 
 **Admin panel** («Boshqaruv»): statistika, xabar yuborish, foydalanuvchini boshqarish (balans, ban),
-to'lov rekvizitlari, kanallar, sozlamalar (valyuta, referal %, narxlar, TON, adminlar) va
-**✨ Premium emojilar**.
+to'lov rekvizitlari (karta raqami va karta egasi ismi), kanallar, sozlamalar (valyuta, referal %, narxlar, adminlar) va
+**✨ Premium emojilar**, **🎨 Tugma ranglari**.
+
+## 🎨 Tugma ranglarini sozlash
+
+`Boshqaruv → 🎨 Tugma ranglari`: guruhni (asosiy menyu / admin / amallar) va tugmani tanlab, rangini belgilang —
+🔵 ko'k, 🟢 yashil, 🔴 qizil yoki ⚪ rangsiz. «Standart» tugmasi asl rangni tiklaydi.
+Ranglar Bot API 9.4 ni qo'llab-quvvatlaydigan Telegram ilovalarida ko'rinadi.
 
 ## ✨ Premium emojilarni sozlash
 

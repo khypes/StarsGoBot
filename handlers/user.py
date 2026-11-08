@@ -34,10 +34,15 @@ async def home_view(user_id: int, full_name: str):
     user = await db.get_user(user_id)
     text = card(
         "wave", f"Assalomu alaykum, {esc(full_name)}!",
-        f"{em('rocket')} Telegram Stars va Premium xarid qilish botiga xush kelibsiz.",
+        f"{em('rocket')} StarsGo orqali Telegram Stars va Premium obunasini tez va qulay sotib olasiz.",
+        "",
         f"{em('topup')} Balansingiz: <b>{await price(user['balance'] if user else 0)}</b>",
         "",
-        f"{em('down')} Kerakli bo'limni tanlang.",
+        f"{em('stars')} <b>Stars olish</b> — o'zingizga yoki do'stingizga",
+        f"{em('premium')} <b>Premium olish</b> — 3, 6 yoki 12 oylik obuna",
+        f"{em('topup')} <b>Hisob to'ldirish</b> — xaridlar uchun balans",
+        "",
+        f"{em('down')} Davom etish uchun bo'limni tanlang:",
     )
     return text, main_menu(await db.is_admin(user_id))
 
@@ -46,12 +51,15 @@ async def account_view(user_id: int):
     user = await db.get_user(user_id)
     text = card(
         "account", "Mening hisobim",
-        f"{em('id')} ID: <code>{user_id}</code>",
+        f"{em('id')} Telegram ID: <code>{user_id}</code>",
         f"{em('topup')} Balans: <b>{await price(user['balance'])}</b>",
-        f"{em('orders')} Jami buyurtmalar: {await db.user_order_count(user_id)}",
+        f"{em('orders')} Buyurtmalar soni: <b>{await db.user_order_count(user_id)}</b>",
+        f"{em('people')} Taklif qilgan do'stlar: <b>{await db.referral_count(user_id)}</b>",
+        "",
+        f"{em('info')} Balans — bot ichidagi hisobingiz. Stars va Premium xaridlari shu balansdan to'lanadi.",
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [ibtn("topup", "Hisob to'ldirish", style="primary", callback_data="m:topup"),
+        [ibtn("topup", "Hisob to'ldirish", callback_data="m:topup"),
          ibtn("orders", "Buyurtmalarim", callback_data="m:orders")],
         [ibtn("back", "Orqaga", callback_data="m:home")],
     ])
@@ -61,15 +69,24 @@ async def account_view(user_id: int):
 async def orders_view(user_id: int):
     orders = await db.user_orders(user_id, 10)
     if not orders:
-        return note("inbox", "Sizda hali buyurtmalar mavjud emas."), back_kb()
+        return card(
+            "inbox", "Buyurtmalarim",
+            "Sizda hali buyurtmalar yo'q.",
+            "Birinchi buyurtmani «Stars olish» yoki «Premium olish» bo'limidan bering.",
+        ), back_kb()
     icons = {"kutilmoqda": "pending", "bajarildi": "done", "bekor qilindi": "cancel"}
+    words = {"kutilmoqda": "kutilmoqda", "bajarildi": "bajarildi", "bekor qilindi": "bekor qilindi, pul qaytarilgan"}
     cur = await currency()
-    lines = [
-        f"{em(icons.get(o['status'], 'pending'))} <b>#{o['id']}</b> · {esc(o['detail'])} · "
-        f"{fmt_num(o['price'])} {cur} · {esc(o['status'])}"
-        for o in orders
+    lines = ["Oxirgi buyurtmalaringiz:", ""]
+    for o in orders:
+        icon = em(icons.get(o["status"], "pending"))
+        lines.append(f"{icon} <b>#{o['id']}</b> · {esc(o['detail'])}")
+        lines.append(f"      {fmt_num(o['price'])} {cur} · {esc(words.get(o['status'], o['status']))}")
+    lines += [
+        "",
+        f"{em('info')} Buyurtma yetkazilishi bilan sizga alohida xabar keladi.",
     ]
-    return card("orders", "So'nggi buyurtmalaringiz", *lines, expandable=len(lines) > 5), back_kb()
+    return card("orders", "Buyurtmalarim", *lines, expandable=len(orders) > 4), back_kb()
 
 
 _me = None
@@ -87,11 +104,16 @@ async def referral_view(bot: Bot, user_id: int):
     percent = await db.get_setting("referral_percent") or "0"
     text = card(
         "referral", "Referal dasturi",
+        "Do'stlaringizni taklif qiling va ularning xaridlaridan bonus oling.",
+        "",
         f"{em('link')} Sizning havolangiz:\n{link}",
         "",
-        f"{em('people')} Taklif qilingan do'stlar: <b>{await db.referral_count(user_id)}</b> ta",
-        f"{em('bonus')} Har bir do'stingizning birinchi bajarilgan xarididan <b>{esc(percent)}%</b> "
-        f"bonus balansingizga qo'shiladi.",
+        f"{em('people')} Taklif qilgan do'stlaringiz: <b>{await db.referral_count(user_id)}</b> ta",
+        "",
+        "<b>Qanday ishlaydi:</b>",
+        "1. Havolani do'stingizga yuboring.",
+        "2. Do'stingiz havola orqali botga kirib, birinchi xaridini qiladi.",
+        f"3. Buyurtma bajarilgach, narxning <b>{esc(percent)}%</b> miqdorida bonus sizning balansingizga tushadi.",
     )
     return text, back_kb()
 
@@ -99,15 +121,22 @@ async def referral_view(bot: Bot, user_id: int):
 def guide_view():
     text = card(
         "guide", "Qo'llanma",
-        f"{em('stars')} <b>Stars</b> — miqdorni tanlang, qabul qiluvchi usernamesini kiriting va tasdiqlang. "
-        f"Mablag' balansingizdan yechiladi.",
+        "<b>Qanday xarid qilinadi?</b>",
+        f"1. «Hisob to'ldirish» orqali balansni to'ldiring.",
+        f"2. «Stars olish» yoki «Premium olish» bo'limini oching.",
+        "3. Paketni tanlang va qabul qiluvchi usernamesini kiriting.",
+        "4. Ma'lumotlarni tekshirib, «Tasdiqlash» tugmasini bosing.",
+        "5. Buyurtma yetkazilgach sizga xabar keladi.",
         "",
-        f"{em('premium')} <b>Premium</b> — obunani o'zingizga yoki boshqa foydalanuvchiga sovg'a qilishingiz mumkin.",
+        f"{em('stars')} <b>Stars</b> — Telegram ichidagi virtual valyuta. O'zingizga yoki boshqa akkauntga yuborish mumkin.",
         "",
-        f"{em('topup')} <b>Hisob to'ldirish</b> — ko'rsatilgan rekvizitga to'lab, chekni yuboring. "
-        f"Admin tasdiqlagach mablag' balansingizga tushadi.",
+        f"{em('premium')} <b>Premium</b> — Telegram Premium obunasi (3, 6 yoki 12 oy). Qabul qiluvchining akkauntida yoqiladi.",
         "",
-        f"{em('referral')} <b>Referal</b> — do'stlaringizni taklif qiling va bonus oling.",
+        f"{em('topup')} <b>Hisob to'ldirish</b> — kartaga to'lov qilib, chekni yuborasiz. Admin tasdiqlagach mablag' balansga tushadi.",
+        "",
+        f"{em('referral')} <b>Referal</b> — do'stingiz birinchi xarid qilsa, siz bonus olasiz.",
+        "",
+        f"{em('info')} Muammo bo'lsa, «Murojaat» orqali adminga yozing.",
         expandable=True,
     )
     return text, back_kb()
@@ -143,8 +172,9 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
         if missing:
             await message.answer(
                 card("megaphone", "Majburiy obuna",
-                     "Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling, "
-                     "so'ng «Tekshirish» tugmasini bosing."),
+                     "Botdan foydalanish uchun quyidagi kanallarga obuna bo'lishingiz kerak.",
+                     "",
+                     "Obuna bo'lgach, «Tekshirish» tugmasini bosing."),
                 reply_markup=channels_check_kb(missing),
             )
             return
@@ -158,7 +188,7 @@ async def cb_check_subs(call: CallbackQuery, bot: Bot):
     if await missing_channels(bot, call.from_user.id):
         await call.answer("Hali barcha kanallarga obuna bo'lmagansiz.", show_alert=True)
         return
-    await call.answer("Obuna tasdiqlandi!")
+    await call.answer("Obuna tasdiqlandi, xush kelibsiz!")
     await show(call, *await home_view(call.from_user.id, call.from_user.full_name))
 
 
@@ -204,9 +234,16 @@ async def cb_stars(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.answer()
     prices = await db.get_stars_prices()
+    if not prices:
+        await show(call, card("inbox", "Stars olish", "Hozircha paketlar mavjud emas. Keyinroq urinib ko'ring."), back_kb())
+        return
     await show(
         call,
-        card("stars", "Stars", "Sotib olmoqchi bo'lgan miqdorni tanlang:"),
+        card("stars", "Stars olish — 1/3",
+             "Kerakli Stars miqdorini tanlang. Narx tugmada ko'rsatilgan.",
+             "",
+             f"{em('info')} Keyingi qadamlarda qabul qiluvchini kiritasiz va buyurtmani tasdiqlaysiz. "
+             "Pul faqat tasdiqlagandan keyin balansdan yechiladi."),
         stars_prices_kb(prices, await currency()),
     )
 
@@ -216,9 +253,16 @@ async def cb_premium(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.answer()
     prices = await db.get_premium_prices()
+    if not prices:
+        await show(call, card("inbox", "Premium olish", "Hozircha tariflar mavjud emas. Keyinroq urinib ko'ring."), back_kb())
+        return
     await show(
         call,
-        card("premium", "Premium", "Kerakli tarifni tanlang:"),
+        card("premium", "Premium olish — 1/3",
+             "Telegram Premium obunasi muddatini tanlang. Uzoq muddatli tarif odatda arzonroq.",
+             "",
+             f"{em('info')} Keyingi qadamlarda qabul qiluvchini kiritasiz va buyurtmani tasdiqlaysiz. "
+             "Pul faqat tasdiqlagandan keyin balansdan yechiladi."),
         premium_prices_kb(prices, await currency()),
     )
 
@@ -230,7 +274,9 @@ async def cb_appeal(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await ask(call, state, Appeal.waiting_message, card(
         "pencil", "Murojaat",
-        "Murojaatingizni yozib yuboring (matn, rasm yoki hujjat bo'lishi mumkin).",
+        "Savol, taklif yoki muammoingizni yozib yuboring. Matn, rasm yoki fayl yuborishingiz mumkin.",
+        "",
+        f"{em('info')} Murojaat adminga yetkaziladi. Admin ko'rib chiqib, siz bilan bog'lanadi.",
     ), back="m:home")
 
 
@@ -247,7 +293,8 @@ async def appeal_receive(message: Message, state: FSMContext, bot: Bot):
         except Exception:
             pass
     await finish(message, state,
-                 note("done", "Murojaatingiz qabul qilindi. Tez orada javob beramiz."),
+                 card("done", "Murojaat yuborildi",
+                      "Murojaatingiz adminga yetkazildi.", "Ko'rib chiqilgach siz bilan bog'lanamiz."),
                  back_kb("m:home", "Bosh menyu"))
 
 
@@ -275,14 +322,19 @@ async def cb_choose_product(call: CallbackQuery, state: FSMContext):
     back = "m:stars" if kind == "stars" else "m:premium"
     await call.answer()
     own = call.from_user.username
+    icon = "stars" if kind == "stars" else "premium"
+    own_hint = ("O'zingiz uchun bo'lsa — pastdagi «O'zimga» tugmasini bosing." if own
+                else "Telegram usernamengiz yo'q, shuning uchun boshqa akkaunt usernamesini kiriting.")
     await ask(
         call, state, Purchase.waiting_recipient,
-        card("account", "Qabul qiluvchi",
-             f"{em('stars' if kind == 'stars' else 'premium')} <b>{_product_label(kind, qty)}</b> "
-             f"({await price(item['price'])})",
+        card("account", "Qabul qiluvchi — 2/3",
+             f"{em(icon)} Tanlandi: <b>{_product_label(kind, qty)}</b> · {await price(item['price'])}",
              "",
-             "Kim uchun? Qabul qiluvchining usernamesini yuboring (masalan: <code>@username</code>)."
-             + ("" if own else "\nUsernamengiz yo'q — boshqa foydalanuvchi usernamesini kiriting.")),
+             "Buyurtma qaysi Telegram akkauntga yuborilsin?",
+             "Qabul qiluvchining usernamesini yuboring, masalan: <code>@username</code>",
+             own_hint,
+             "",
+             f"{em('info')} Username to'g'ri yozilganini tekshiring — noto'g'ri bo'lsa buyurtma bajarilmasligi mumkin."),
         back=back, kb=recipient_kb(own, back),
         kind=kind, qty=qty, price=item["price"],
     )
@@ -291,24 +343,34 @@ async def cb_choose_product(call: CallbackQuery, state: FSMContext):
 async def _confirm_view(user_id: int, data: dict, flash: str | None = None):
     kind, qty, recipient, cost = data["kind"], data["qty"], data["recipient"], data["price"]
     user = await db.get_user(user_id)
+    left = user["balance"] - cost
     lines = []
     if flash:
         lines += [flash, ""]
     lines += [
+        "Ma'lumotlarni tekshiring:",
+        "",
         f"{em('stars' if kind == 'stars' else 'premium')} Mahsulot: <b>{_product_label(kind, qty)}</b>",
         f"{em('link')} Qabul qiluvchi: <code>@{esc(recipient)}</code>",
-        f"{em('money')} Narx: <b>{await price(cost)}</b>",
-        f"{em('topup')} Balansingiz: {await price(user['balance'])}",
+        f"{em('money')} Narxi: <b>{await price(cost)}</b>",
+        f"{em('topup')} Balansingiz: {await price(user['balance'])}"
+        + (f" → xariddan keyin: <b>{await price(left)}</b>" if left >= 0 else ""),
+        "",
     ]
+    if left < 0:
+        lines.append(f"{em('warn')} Balansingiz yetarli emas ({await price(-left)} yetishmayapti). "
+                     "Avval hisobni to'ldiring.")
+    else:
+        lines.append("«Tasdiqlash» bosilgach summa balansingizdan yechiladi va buyurtma yetkazila boshlaydi.")
     back = "m:stars" if kind == "stars" else "m:premium"
-    return card("orders", "Buyurtmani tasdiqlang", *lines), confirm_kb(await price(cost), back)
+    return card("orders", "Buyurtmani tasdiqlang — 3/3", *lines), confirm_kb(await price(cost), back)
 
 
 @router.message(Purchase.waiting_recipient, F.text)
 async def purchase_recipient(message: Message, state: FSMContext):
     m = USERNAME_RE.match(message.text.strip())
     if not m:
-        await invalid(message, state, "To'g'ri username yuboring. Masalan: @username")
+        await invalid(message, state, "Username noto'g'ri. U lotin harfidan boshlanib, 5–32 ta harf, raqam yoki _ dan iborat bo'lishi kerak. Masalan: @username")
         return
     await state.update_data(recipient=m.group(1))
     data = await state.get_data()
@@ -371,9 +433,11 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
             bal = user["balance"] if user else 0
             await show(call, card(
                 "warn", "Mablag' yetarli emas",
-                f"Kerak: <b>{await price(cost)}</b>",
-                f"Mavjud: <b>{await price(bal)}</b>",
+                f"Buyurtma narxi: <b>{await price(cost)}</b>",
+                f"Sizning balansingiz: <b>{await price(bal)}</b>",
                 f"Yetishmayapti: <b>{await price(max(cost - bal, 0))}</b>",
+                "",
+                "Hisobni to'ldiring, so'ng buyurtmani qaytadan bering.",
             ), InlineKeyboardMarkup(inline_keyboard=[
                 [ibtn("topup", "Hisob to'ldirish", style="primary", callback_data="m:topup")],
                 [ibtn("back", "Orqaga", callback_data="m:home")],
@@ -385,12 +449,14 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
         auto = await fulfillment.get_client() is not None
         await show(call, card(
             "done", f"Buyurtma #{order_id} qabul qilindi",
-            f"{em('stars' if kind == 'stars' else 'premium')} {esc(detail)}",
-            f"{em('money')} {await price(cost)}",
+            f"{em('stars' if kind == 'stars' else 'premium')} Mahsulot: <b>{esc(detail)}</b>",
+            f"{em('money')} To'langan: <b>{await price(cost)}</b>",
             "",
-            f"{em('auto') if auto else em('pending')} "
-            + ("Avtomatik yetkazib berilmoqda — odatda bir necha daqiqa ichida." if auto
-               else "Holat: kutilmoqda. Tez orada yetkazib beramiz."),
+            (f"{em('auto')} <b>Avtomatik yetkazib berilmoqda.</b> Odatda bir necha daqiqa ichida tugaydi."
+             if auto else
+             f"{em('pending')} <b>Buyurtma ko'rib chiqilmoqda.</b> Admin tez orada bajaradi."),
+            "",
+            f"{em('info')} Yetkazilgach sizga xabar yuboramiz. Holatni «Buyurtmalarim» bo'limida ham ko'rishingiz mumkin.",
         ), InlineKeyboardMarkup(inline_keyboard=[
             [ibtn("orders", "Buyurtmalarim", callback_data="m:orders"),
              ibtn("home", "Bosh menyu", callback_data="m:home")],
@@ -402,13 +468,20 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
 
 # ==================== Hisob to'ldirish ====================
 
+def _fmt_card(number: str) -> str:
+    digits = "".join(ch for ch in number if ch.isdigit())
+    return " ".join(digits[i:i + 4] for i in range(0, len(digits), 4))
+
+
 @router.callback_query(F.data == "m:topup")
 async def cb_topup(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await ask(call, state, TopUp.waiting_amount, card(
-        "topup", "Hisob to'ldirish",
-        f"To'ldirmoqchi bo'lgan summani kiriting ({esc(await currency())}, faqat raqam).",
-        "Masalan: <code>50000</code>",
+        "topup", "Hisob to'ldirish — 1/2",
+        f"Balansni qancha ({esc(await currency())}) ga to'ldirmoqchisiz?",
+        "Summani faqat raqam bilan yuboring, masalan: <code>50000</code>",
+        "",
+        f"{em('info')} Keyingi qadamda to'lov rekvizitlari ko'rsatiladi.",
     ), back="m:home")
 
 
@@ -416,35 +489,42 @@ async def cb_topup(call: CallbackQuery, state: FSMContext):
 async def topup_amount(message: Message, state: FSMContext):
     raw = message.text.replace(" ", "")
     if not (raw.isascii() and raw.isdigit()) or not (0 < int(raw) <= MAX_TOPUP):
-        await invalid(message, state, "Iltimos, to'g'ri musbat raqam kiriting.")
+        await invalid(message, state, "Faqat musbat raqam kiriting. Masalan: 50000")
         return
     amount = int(raw)
     await state.update_data(topup_amount=amount)
     await state.set_state(TopUp.waiting_receipt)
 
-    card_no = await db.get_setting("card_number")
-    ton = await db.get_setting("ton_wallet")
-    lines = []
-    if card_no:
-        lines.append(f"{em('payment')} Karta: <code>{esc(card_no)}</code>")
-    if ton:
-        lines.append(f"{em('ton')} TON hamyon: <code>{esc(ton)}</code>")
-    if not lines:
-        lines.append("To'lov rekvizitlari hali kiritilmagan. Admin bilan bog'laning.")
-    lines += [
-        "",
-        f"{em('money')} To'lov summasi: <b>{await price(amount)}</b>",
-        "",
-        "To'lovdan so'ng chek (rasm yoki fayl) yuboring.",
-    ]
-    text = card("payment", "To'lov ma'lumotlari", *lines)
+    number = await db.get_setting("card_number")
+    holder = await db.get_setting("card_holder")
+    if number:
+        lines = [
+            "Quyidagi kartaga to'lov qiling:",
+            "",
+            f"{em('payment')} Karta raqami: <code>{esc(_fmt_card(number))}</code>",
+        ]
+        if holder:
+            lines.append(f"{em('name')} Karta egasi: <b>{esc(holder)}</b>")
+        lines += [
+            f"{em('money')} To'lov summasi: <b>{await price(amount)}</b>",
+            "",
+            "To'lovdan so'ng <b>chekni</b> (skrinshot yoki fayl) shu yerga yuboring.",
+            "",
+            f"{em('info')} Chekda summa va to'lov vaqti ko'rinib tursin. Admin tekshirib, mablag'ni balansingizga qo'shadi.",
+        ]
+    else:
+        lines = [
+            f"{em('warn')} To'lov rekvizitlari hali kiritilmagan.",
+            "Iltimos, bosh menyudagi «Murojaat» orqali adminga yozing.",
+        ]
+    text = card("payment", "Hisob to'ldirish — 2/2", *lines)
     await state.update_data(prompt_text=text)
     await render_input(message, state, text, cancel_kb("m:home"))
 
 
 @router.message(TopUp.waiting_amount)
 async def topup_amount_invalid(message: Message, state: FSMContext):
-    await invalid(message, state, "Iltimos, summani raqam bilan yozing.")
+    await invalid(message, state, "Summani matn ko'rinishida, faqat raqam bilan yozing. Masalan: 50000")
 
 
 @router.message(TopUp.waiting_receipt, F.photo | F.document)
@@ -470,13 +550,16 @@ async def topup_receipt(message: Message, state: FSMContext, bot: Bot):
                                        reply_markup=topup_action_kb(tx_id))
     await finish(message, state, card(
         "done", f"So'rov #{tx_id} qabul qilindi",
-        f"Admin tasdiqlagach <b>{await price(amount)}</b> balansingizga qo'shiladi.",
+        "Chekingiz adminga yuborildi.",
+        f"Tekshirilgach <b>{await price(amount)}</b> balansingizga qo'shiladi.",
+        "",
+        f"{em('info')} Natija haqida sizga alohida xabar yuboramiz.",
     ), back_kb("m:home", "Bosh menyu"), delete_input=False)
 
 
 @router.message(TopUp.waiting_receipt)
 async def topup_receipt_invalid(message: Message, state: FSMContext):
-    await invalid(message, state, "Iltimos, to'lov chekini rasm yoki fayl shaklida yuboring.")
+    await invalid(message, state, "Chekni rasm (skrinshot) yoki fayl ko'rinishida yuboring.")
 
 
 # ==================== Noma'lum xabar (jumladan, eski reply tugmalar) ====================

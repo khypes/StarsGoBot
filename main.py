@@ -12,7 +12,7 @@ import fulfillment
 from config import BOT_TOKEN, DROP_PENDING_UPDATES, DB_PATH
 from database.db import init_db, close_db
 from fallback import EmojiFallbackMiddleware
-from handlers import admin, coindrop_admin, emoji_admin, user
+from handlers import admin, coindrop_admin, emoji_admin, style_admin, user
 from middlewares import AccessMiddleware
 
 log = logging.getLogger("starsgo")
@@ -46,6 +46,7 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(emoji_admin.router)
     dp.include_router(coindrop_admin.router)
+    dp.include_router(style_admin.router)
     dp.include_router(user.router)
 
     worker = asyncio.create_task(fulfillment.worker(bot))  # Coindrop: holatni kuzatish va qayta urinish

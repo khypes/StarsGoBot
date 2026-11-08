@@ -46,7 +46,7 @@ class AccessMiddleware(BaseMiddleware):
             row, _ = await db.create_user_if_not_exists(user.id, user.username or "", user.full_name or "", None)
 
         if row is not None and row["is_banned"]:
-            text = card("ban", "Bloklangansiz", "Siz botdan foydalanishdan chetlatilgansiz.")
+            text = card("ban", "Bloklangansiz", "Siz botdan foydalanishdan chetlatilgansiz.", "Xato deb o'ylasangiz, admin bilan bog'laning.")
             if isinstance(event, CallbackQuery):
                 await event.answer("Siz bloklangansiz", show_alert=True)
             elif isinstance(event, Message):
@@ -67,7 +67,9 @@ class AccessMiddleware(BaseMiddleware):
 
         text = card(
             "megaphone", "Majburiy obuna",
-            "Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling, so'ng «Tekshirish» tugmasini bosing.",
+            "Botdan foydalanish uchun quyidagi kanallarga obuna bo'lishingiz kerak.",
+            "",
+            "Obuna bo'lgach, «Tekshirish» tugmasini bosing.",
         )
         if isinstance(event, CallbackQuery):
             await event.answer("Avval kanallarga obuna bo'ling", show_alert=True)

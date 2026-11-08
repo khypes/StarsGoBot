@@ -42,15 +42,24 @@ async def edit_card(call: CallbackQuery, text: str, kb=None):
 
 # ==================== bosh ekran ====================
 
-def home_view():
-    return card("panel", "Admin panel", "Kerakli bo'limni tanlang."), admin_home_kb()
+async def home_view():
+    _, _, pending = await db.order_stats()
+    users = await db.user_count()
+    text = card(
+        "panel", "Admin panel",
+        f"{em('people')} Foydalanuvchilar: <b>{users}</b>",
+        f"{em('pending')} Kutilayotgan buyurtmalar: <b>{pending}</b>",
+        "",
+        f"{em('down')} Kerakli bo'limni tanlang:",
+    )
+    return text, admin_home_kb()
 
 
 @router.callback_query(F.data == "a:home")
 async def cb_home(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.answer()
-    await show(call, *home_view())
+    await show(call, *await home_view())
 
 
 # ==================== statistika ====================
@@ -88,7 +97,10 @@ async def cb_broadcast(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await ask(call, state, AdminBroadcast.waiting_message, card(
         "broadcast", "Xabar yuborish",
-        "Barcha foydalanuvchilarga yubormoqchi bo'lgan xabaringizni yuboring (matn, rasm, video...).",
+        f"Xabar botdagi barcha foydalanuvchilarga yuboriladi: <b>{await db.user_count()}</b> kishi.",
+        "Matn, rasm, video yoki fayl yuborishingiz mumkin.",
+        "",
+        f"{em('warn')} Yuborilgan xabarni qaytarib bo'lmaydi — jo'natishdan oldin yaxshilab tekshiring.",
     ), back="a:home")
 
 
@@ -150,7 +162,10 @@ async def user_view(uid: int, flash: str | None = None):
 async def cb_users(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await ask(call, state, AdminUserManage.waiting_user_id, card(
-        "users", "Foydalanuvchini boshqarish", "ID raqam yoki @username yuboring.",
+        "users", "Foydalanuvchini boshqarish",
+        "Foydalanuvchining Telegram ID raqamini yoki @username ini yuboring.",
+        "",
+        f"{em('info')} Topilgach balansni o'zgartirish, bloklash yoki blokdan chiqarish mumkin.",
     ), back="a:home")
 
 
@@ -228,14 +243,24 @@ async def user_balance_invalid(message: Message, state: FSMContext):
 
 # ==================== to'lov tizimi ====================
 
+def fmt_card(number: str) -> str:
+    """8600123412341234 -> 8600 1234 1234 1234"""
+    digits = re.sub(r"\D", "", number)
+    return " ".join(digits[i:i + 4] for i in range(0, len(digits), 4))
+
+
 async def payment_view(flash: str | None = None):
-    card_no = await db.get_setting("card_number")
-    ton = await db.get_setting("ton_wallet")
+    number = await db.get_setting("card_number")
+    holder = await db.get_setting("card_holder")
     lines = [flash, ""] if flash else []
     lines += [
-        f"{em('payment')} Karta: <code>{esc(card_no) or 'kiritilmagan'}</code>",
-        f"{em('ton')} TON hamyon: <code>{esc(ton) or 'kiritilmagan'}</code>",
+        "Foydalanuvchilar hisobni shu karta orqali to'ldiradi. Raqam va egasining ismi to'lov oynasida ko'rsatiladi.",
+        "",
+        f"{em('payment')} Karta raqami: <code>{esc(fmt_card(number)) or 'kiritilmagan'}</code>",
+        f"{em('name')} Karta egasi: <b>{esc(holder) or 'kiritilmagan'}</b>",
     ]
+    if not number or not holder:
+        lines += ["", f"{em('warn')} Ikkala maydonni ham to'ldiring — shunda foydalanuvchi to'lovni adashmay qiladi."]
     return card("payment", "To'lov tizimi", *lines), payment_kb()
 
 
@@ -250,26 +275,52 @@ async def cb_payment(call: CallbackQuery, state: FSMContext):
 async def cb_pay_card(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await ask(call, state, AdminSettings.waiting_card_number, card(
-        "payment", "Karta raqami", "Yangi karta raqamini yuboring."), back="a:pay")
+        "payment", "Karta raqami",
+        "Yangi karta raqamini yuboring (masalan: <code>8600 1234 5678 9012</code>).",
+        "Raqamni o'chirish uchun <code>-</code> yuboring.",
+    ), back="a:pay")
 
 
-@router.callback_query(F.data == "p:ton")
-async def cb_pay_ton(call: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "p:holder")
+async def cb_pay_holder(call: CallbackQuery, state: FSMContext):
     await call.answer()
-    await ask(call, state, AdminSettings.waiting_ton_wallet, card(
-        "ton", "TON hamyon", "Yangi manzilni yuboring."), back="a:pay")
+    await ask(call, state, AdminSettings.waiting_card_holder, card(
+        "name", "Karta egasi",
+        "Karta egasining ism-familiyasini yuboring (masalan: <code>ALISHER VALIYEV</code>).",
+        "Foydalanuvchi to'lovdan oldin ismni ko'rib, to'g'ri kartaga o'tkazganini tekshira oladi.",
+        "O'chirish uchun <code>-</code> yuboring.",
+    ), back="a:pay")
 
 
 @router.message(AdminSettings.waiting_card_number, F.text)
 async def card_set(message: Message, state: FSMContext):
-    await db.set_setting("card_number", message.text.strip())
-    await finish(message, state, *await payment_view(f"{em('done')} <b>Karta raqami yangilandi.</b>"))
+    raw = message.text.strip()
+    if raw == "-":
+        value = ""
+    else:
+        digits = re.sub(r"[\s-]", "", raw)
+        if not (digits.isascii() and digits.isdigit() and 12 <= len(digits) <= 19):
+            await invalid(message, state, "Karta raqami 12–19 ta raqamdan iborat bo'lsin. Masalan: 8600 1234 5678 9012")
+            return
+        value = digits
+    await db.set_setting("card_number", value)
+    word = "yangilandi" if value else "o'chirildi"
+    await finish(message, state, *await payment_view(f"{em('done')} <b>Karta raqami {word}.</b>"))
 
 
-@router.message(AdminSettings.waiting_ton_wallet, F.text)
-async def ton_set(message: Message, state: FSMContext):
-    await db.set_setting("ton_wallet", message.text.strip())
-    await finish(message, state, *await payment_view(f"{em('done')} <b>TON hamyon yangilandi.</b>"))
+@router.message(AdminSettings.waiting_card_holder, F.text)
+async def holder_set(message: Message, state: FSMContext):
+    raw = " ".join(message.text.split())
+    if raw == "-":
+        value = ""
+    else:
+        if not (2 <= len(raw) <= 40):
+            await invalid(message, state, "Ism 2–40 ta belgidan iborat bo'lsin.")
+            return
+        value = raw.upper()
+    await db.set_setting("card_holder", value)
+    word = "yangilandi" if value else "o'chirildi"
+    await finish(message, state, *await payment_view(f"{em('done')} <b>Karta egasi {word}.</b>"))
 
 
 # ==================== kanallar (majburiy obuna) ====================
@@ -300,7 +351,8 @@ async def cb_channel_add(call: CallbackQuery, state: FSMContext):
         "Kanal usernamesini yuboring: <code>@kanal</code>",
         "Maxfiy kanal uchun: <code>-100123456789 | https://t.me/+havola</code>",
         "",
-        "Bot kanalda administrator bo'lishi kerak.",
+        f"{em('warn')} Bot kanalda administrator bo'lishi shart, aks holda obunani tekshira olmaydi.",
+        "Foydalanuvchilar shu kanallarga obuna bo'lmaguncha botdan foydalana olmaydi.",
     ), back="a:ch")
 
 
@@ -375,7 +427,9 @@ async def cb_currency(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await ask(call, state, AdminSettings.waiting_currency, card(
         "currency", "Valyuta", f"Joriy: <b>{esc(await currency())}</b>",
-        "Yangi valyuta belgisini yuboring (masalan: <code>so'm</code>).",
+        "Yangi valyuta belgisini yuboring, masalan: <code>so'm</code>.",
+        "",
+        f"{em('info')} Barcha narxlar va balanslar shu nom bilan ko'rsatiladi.",
     ), back="a:set")
 
 
@@ -503,7 +557,11 @@ async def cb_admins(call: CallbackQuery, state: FSMContext):
 async def cb_admin_add(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await ask(call, state, AdminSettings.waiting_add_admin, card(
-        "plus", "Admin qo'shish", "Yangi adminning Telegram ID raqamini yuboring."), back="s:adm")
+        "plus", "Admin qo'shish",
+        "Yangi adminning Telegram ID raqamini yuboring (faqat raqam).",
+        "",
+        f"{em('info')} Admin buyurtmalar, to'lovlar va sozlamalarni boshqara oladi. "
+        "ID ni @userinfobot orqali bilib olish mumkin."), back="s:adm")
 
 
 @router.message(AdminSettings.waiting_add_admin, F.text)
@@ -565,7 +623,9 @@ async def order_done(call: CallbackQuery):
     with contextlib.suppress(Exception):
         await call.bot.send_message(order["user_id"], card(
             "done", f"Buyurtma #{order['id']} bajarildi",
-            f"{esc(order['detail'])} muvaffaqiyatli yetkazildi!",
+            f"{esc(order['detail'])} muvaffaqiyatli yetkazildi.",
+            "",
+            "Xaridingiz uchun rahmat! Yana kutib qolamiz.",
         ))
     if bonus:
         with contextlib.suppress(Exception):
@@ -592,7 +652,10 @@ async def order_cancel(call: CallbackQuery):
     with contextlib.suppress(Exception):
         await call.bot.send_message(order["user_id"], card(
             "cancel", f"Buyurtma #{order['id']} bekor qilindi",
-            f"{esc(order['detail'])}", "Mablag' balansingizga qaytarildi.",
+            f"{esc(order['detail'])}",
+            "",
+            "Buyurtma admin tomonidan bekor qilindi. To'langan mablag' balansingizga to'liq qaytarildi.",
+            "Savollaringiz bo'lsa, «Murojaat» orqali yozing.",
         ))
 
 
@@ -618,7 +681,11 @@ async def topup_ok(call: CallbackQuery):
     await edit_card(call, await topup_card(tx, user, f"{em('done')} <b>TASDIQLANDI</b>"))
     with contextlib.suppress(Exception):
         await call.bot.send_message(tx["user_id"], card(
-            "done", "Hisob to'ldirildi", f"<b>+{await price(tx['amount'])}</b> balansingizga qo'shildi!",
+            "done", "Hisob to'ldirildi",
+            f"{em('topup')} Balansingizga <b>+{await price(tx['amount'])}</b> qo'shildi.",
+            f"{em('money')} Joriy balans: <b>{await price((await db.get_user(tx['user_id']))['balance'])}</b>",
+            "",
+            "Endi Stars yoki Premium xarid qilishingiz mumkin.",
         ))
 
 
@@ -634,7 +701,10 @@ async def topup_no(call: CallbackQuery):
     with contextlib.suppress(Exception):
         await call.bot.send_message(tx["user_id"], card(
             "cancel", f"So'rov #{tx['id']} rad etildi",
-            "Savollaringiz bo'lsa, «Murojaat» orqali yozing.",
+            f"Summa: {await price(tx['amount'])}",
+            "",
+            "Chek tasdiqlanmadi: to'lov topilmadi yoki ma'lumotlar mos kelmadi.",
+            "To'lov qilgan bo'lsangiz, «Murojaat» orqali chek bilan adminga yozing.",
         ))
 
 
@@ -644,7 +714,7 @@ async def topup_no(call: CallbackQuery):
 @router.message(AdminSettings.waiting_currency)
 @router.message(AdminSettings.waiting_referral_percent)
 @router.message(AdminSettings.waiting_card_number)
-@router.message(AdminSettings.waiting_ton_wallet)
+@router.message(AdminSettings.waiting_card_holder)
 @router.message(AdminSettings.waiting_add_admin)
 @router.message(AdminChannel.waiting_add)
 async def text_expected(message: Message, state: FSMContext):
