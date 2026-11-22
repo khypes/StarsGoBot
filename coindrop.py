@@ -42,13 +42,13 @@ class CoinDropError(Exception):
 
     def human(self) -> str:
         return {
-            "auth": "API kalit noto'g'ri yoki API o'chirilgan (401/403)",
-            "balance": "Coindrop balansi yetarli emas — hisobni to'ldiring",
+            "auth": f"API kalit noto'g'ri, o'chirilgan yoki ruxsat yo'q: {self.detail}",
+            "balance": "Provayder balansi yetarli emas — API hisobini to'ldiring",
             "stock": "Mahsulot hozir mavjud emas (stock)",
             "invalid": f"So'rov rad etildi: {self.detail}",
             "rate": "So'rovlar limiti oshdi (429)",
-            "upstream": "Coindrop provayderi vaqtincha ishlamayapti (503)",
-            "network": "Coindrop bilan aloqa o'rnatib bo'lmadi",
+            "upstream": "Provayder vaqtincha ishlamayapti (5xx)",
+            "network": "Provayder bilan aloqa o'rnatib bo'lmadi",
         }.get(self.kind, self.detail)
 
 

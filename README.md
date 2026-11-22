@@ -33,7 +33,13 @@ Tugmalarda `icon_custom_emoji_id`, xabarlarda `<tg-emoji>` ishlatiladi (Bot API 
 **Telegram qoidasi:** custom emoji bot xabarlarida faqat bot egasida Telegram Premium bo'lsa ishlaydi.
 Ishlamasa, bot avtomatik oddiy emojiga qaytadi — xato bermaydi.
 
-## 🔌 Coindrop.uz API (avto-yetkazish)
+## 🔌 API provayderlar (avto-yetkazish)
+
+Bot ikkita provayderni qo'llaydi: **Coindrop.uz** (so'mda) va **TgSuperstars** (dollarda, USDT). Tanlash: `Boshqaruv → 🔌 API → Provayder`.
+TgSuperstars uchun kalit `pk_live_...` (partner.tgsuperstars.com), narxlarni so'mga o'tkazish uchun «Dollar kursi» ni kiriting.
+Yangi provayder qo'shish: `providers.py` da `Provider` dan meros oling va `REGISTRY` ga qo'shing.
+
+### Coindrop.uz
 
 `Boshqaruv → 🔌 Coindrop API → API kalit kiritish` (kalit: coindrop.uz → Profil → Security & API Key, `cd_...`).
 
@@ -45,7 +51,7 @@ Ishlamasa, bot avtomatik oddiy emojiga qaytadi — xato bermaydi.
 - Ikki marta yuborishdan himoya: atomik band qilish, `external_ref` bo'yicha tekshiruv, API ishlayotganda
   qo'lda bajarish yopiq.
 - «Narxlarni sinxronlash» — Coindrop narxi + ustama foiz bilan bot narxlarini yangilaydi.
-- Kalit ixtiyoriy ravishda `COINDROP_API_KEY` env orqali ham berilishi mumkin.
+- Kalit ixtiyoriy ravishda `COINDROP_API_KEY` / `TGSUPERSTARS_API_KEY` env orqali ham berilishi mumkin.
 
 ## Lokal ishga tushirish
 

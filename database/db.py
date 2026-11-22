@@ -85,6 +85,7 @@ _ORDER_COLUMNS = {
     "provider_attempts": "INTEGER DEFAULT 0",
     "provider_updated": "INTEGER",
     "provider_cost_usd": "REAL",
+    "provider_name": "TEXT",        # buyurtma qaysi API orqali yuborilgan (NULL = coindrop)
     "admin_msg_id": "INTEGER",
 }
 
@@ -92,6 +93,9 @@ _DEFAULT_SETTINGS = {
     "coindrop_api_key": "",
     "coindrop_enabled": "0",
     "coindrop_markup": "10",
+    "api_provider": "coindrop",     # faol provayder: coindrop | tgsuperstars
+    "tgss_api_key": "",
+    "usd_rate": "0",                # 1$ necha so'm (USD bilan ishlaydigan provayderlar uchun)
     "currency": "so'm",
     "referral_percent": "5",
     "card_number": "",
@@ -315,16 +319,17 @@ async def order_stats():
     return row[0], row[1], pending
 
 
-# ---------- provider (Coindrop) ----------
+# ---------- provider (Coindrop, TgSuperstars, ...) ----------
 
-async def claim_for_provider(order_id: int) -> bool:
+async def claim_for_provider(order_id: int, provider_name: str | None = None) -> bool:
     """Buyurtmani API ga yuborish uchun atomik "band qilish" — ikki marta yuborilishining oldini oladi."""
     rc, _ = await _write(
         "UPDATE orders SET provider_status='sending', provider_error=NULL, "
-        "provider_attempts=COALESCE(provider_attempts,0)+1, provider_updated=? "
+        "provider_attempts=COALESCE(provider_attempts,0)+1, provider_updated=?, "
+        "provider_name=COALESCE(provider_name, ?) "
         "WHERE id=? AND status='kutilmoqda' "
         "AND (provider_status IS NULL OR provider_status IN ('error','retry'))",
-        (int(time.time()), order_id),
+        (int(time.time()), provider_name, order_id),
     )
     return rc == 1
 

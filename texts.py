@@ -2,6 +2,7 @@
 import time
 
 from emojis import em
+from providers import title_of
 from ui import card, esc, price
 
 STALE_AFTER = 1800  # sekund: API jarayonida shundan ortiq tursa, qo'lda hal qilishga ruxsat
@@ -59,7 +60,7 @@ async def order_card(order, user) -> str:
         lines.append(f"{em('link')} Qabul qiluvchi: <code>{esc(order['recipient'])}</code>")
     lines.append(f"{em('money')} {await price(order['price'])}")
     if order["provider_cost_usd"]:
-        lines.append(f"{em('api')} API narxi: ${order['provider_cost_usd']:.2f}")
+        lines.append(f"{em('api')} {esc(title_of(order['provider_name']))} narxi: ${order['provider_cost_usd']:.2f}")
     status = status_line(order)
     if status:
         lines += ["", status]

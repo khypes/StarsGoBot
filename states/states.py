@@ -45,3 +45,4 @@ class AdminEmoji(StatesGroup):
 class AdminCoinDrop(StatesGroup):
     waiting_key = State()
     waiting_markup = State()
+    waiting_rate = State()

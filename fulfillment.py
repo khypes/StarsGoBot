@@ -1,4 +1,4 @@
-"""Buyurtmalarni Coindrop API orqali avtomatik yetkazish.
+"""Buyurtmalarni provayder API (Coindrop.uz, TgSuperstars, ...) orqali avtomatik yetkazish.
 
 Xavfsizlik tamoyillari (pul bilan ishlagani uchun):
   * Buyurtma API ga yuborishdan oldin bazada atomik "band qilinadi" (claim) — ikki marta yuborilmaydi.
@@ -14,16 +14,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import time
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 
 import database.db as db
-from coindrop import (
-    CoinDrop, CoinDropError, STARS_GAME, PREMIUM_GAME, STARS_MIN, STARS_MAX, PREMIUM_MONTHS,
-)
-from config import ADMIN_CHAT_ID, COINDROP_API_KEY
+from coindrop import CoinDropError
+from config import ADMIN_CHAT_ID
+from providers import REGISTRY, DEFAULT_PROVIDER, Provider, title_of
 from emojis import em
 from keyboards.admin_kb import order_action_kb
 from texts import order_card, provider_locked, is_stale, STALE_AFTER
@@ -47,37 +47,36 @@ def spawn(coro) -> None:
 
 # ---------------- sozlamalar ----------------
 
-async def api_key() -> str:
-    return (await db.get_setting("coindrop_api_key")) or COINDROP_API_KEY
+async def active_name() -> str:
+    name = await db.get_setting("api_provider")
+    return name if name in REGISTRY else DEFAULT_PROVIDER
 
 
-async def has_key() -> bool:
-    return bool(await api_key())
+async def api_key(name: str | None = None) -> str:
+    cls = REGISTRY[name or await active_name()]
+    return (await db.get_setting(cls.key_setting)) or (os.getenv(cls.key_env, "").strip() if cls.key_env else "")
+
+
+async def has_key(name: str | None = None) -> bool:
+    return bool(await api_key(name))
 
 
 async def is_enabled() -> bool:
     return (await db.get_setting("coindrop_enabled")) == "1"
 
 
-async def get_client() -> CoinDrop | None:
-    """Avto-yetkazish yoqilgan va kalit mavjud bo'lsagina mijoz qaytaradi."""
+async def provider_by_name(name: str | None) -> Provider | None:
+    """Kalit mavjud bo'lsa provayderni qaytaradi (yoqilgan-o'chirilganiga qaramasdan: kuzatish uchun)."""
+    name = name if name in REGISTRY else DEFAULT_PROVIDER
+    key = await api_key(name)
+    return REGISTRY[name](key) if key else None
+
+
+async def get_client(name: str | None = None) -> Provider | None:
+    """Avto-yetkazish yoqilgan va kalit mavjud bo'lsagina provayderni qaytaradi (standart: faol provayder)."""
     if not await is_enabled():
         return None
-    key = await api_key()
-    return CoinDrop(key) if key else None
-
-
-def build_request(order) -> dict | None:
-    """Buyurtmani API so'roviga aylantiradi. Avtomatlashtirib bo'lmasa — None."""
-    player = (order["recipient"] or "").strip().lstrip("@")
-    qty = order["quantity"] or 0
-    if not player or not qty:
-        return None
-    if order["order_type"] == "stars" and STARS_MIN <= qty <= STARS_MAX:
-        return {"game_key": STARS_GAME, "player_id": player, "amount": qty}
-    if order["order_type"] == "premium" and qty in PREMIUM_MONTHS:
-        return {"game_key": PREMIUM_GAME, "player_id": player, "product_id": f"prem_{qty}m"}
-    return None
+    return await provider_by_name(name or await active_name())
 
 
 # ---------------- admin xabarlari ----------------
@@ -92,7 +91,7 @@ async def order_view(order_id: int):
     if order["status"] == "kutilmoqda":
         kb = order_action_kb(
             order_id, order["provider_status"], locked=provider_locked(order),
-            api_ready=await get_client() is not None,
+            api_ready=await get_client(order["provider_name"]) is not None,
         )
     return await order_card(order, user), kb
 
@@ -131,14 +130,15 @@ async def on_new_order(bot: Bot, order_id: int) -> None:
 
 async def fulfill(bot: Bot, order_id: int) -> str:
     """Buyurtmani API ga yuboradi. Natija: disabled|closed|manual|busy|processing|delivered|failed|retry|error."""
-    client = await get_client()
-    if client is None:
-        return "disabled"
     order = await db.get_order(order_id)
     if order is None or order["status"] != "kutilmoqda":
         return "closed"
+    # Oldingi urinish bo'lgan buyurtma shu provayder bilan davom etadi (provayder almashsa ham)
+    client = await get_client(order["provider_name"])
+    if client is None:
+        return "disabled"
 
-    req = build_request(order)
+    req = client.build_request(order)
     if req is None:
         await db.set_provider(order_id, "error", error="Avtomatik yuborib bo'lmaydi (miqdor/qabul qiluvchi mos emas) — qo'lda bajaring")
         await refresh_admin_card(bot, order_id)
@@ -149,24 +149,24 @@ async def fulfill(bot: Bot, order_id: int) -> str:
     # Oldingi urinish bo'lgan bo'lsa: avval API da buyurtma bor-yo'qligini tekshiramiz (ikki marta yuborilmasin)
     if (order["provider_attempts"] or 0) > 0:
         try:
-            found = await client.find_by_ref(ref)
+            found = await client.find(ref, order)
         except CoinDropError as exc:
             await _schedule_retry(bot, order_id, order, f"Tekshirib bo'lmadi: {exc.human()}")
             return "retry"
         if found:
-            return await _apply(bot, order_id, found)
+            return await _apply(bot, order_id, found, client)
 
-    if not await db.claim_for_provider(order_id):
+    if not await db.claim_for_provider(order_id, client.name):
         return "busy"
 
     try:
-        resp = await client.create_order(external_ref=ref, **req)
+        resp = await client.create(ref, req)
     except CoinDropError as exc:
         return await _on_error(bot, client, order_id, ref, exc)
     except Exception as exc:  # kutilmagan xato — pulni himoya qilish uchun "noaniq" deb qaraymiz
-        log.exception("Coindrop kutilmagan xato (buyurtma #%s)", order_id)
+        log.exception("%s kutilmagan xato (buyurtma #%s)", client.title, order_id)
         return await _on_error(bot, client, order_id, ref, CoinDropError(0, str(exc), "network"))
-    return await _apply(bot, order_id, resp)
+    return await _apply(bot, order_id, resp, client)
 
 
 async def _schedule_retry(bot: Bot, order_id: int, order, reason: str) -> None:
@@ -182,15 +182,15 @@ async def _schedule_retry(bot: Bot, order_id: int, order, reason: str) -> None:
     await refresh_admin_card(bot, order_id)
 
 
-async def _on_error(bot: Bot, client: CoinDrop, order_id: int, ref: str, exc: CoinDropError) -> str:
-    log.warning("Coindrop xatosi (buyurtma #%s): %s", order_id, exc)
+async def _on_error(bot: Bot, client: Provider, order_id: int, ref: str, exc: CoinDropError) -> str:
+    log.warning("%s xatosi (buyurtma #%s): %s", client.title, order_id, exc)
     order = await db.get_order(order_id)
     if exc.uncertain:
         # So'rov yetib borgan bo'lishi mumkin — avval tekshiramiz
         with contextlib.suppress(CoinDropError):
-            found = await client.find_by_ref(ref)
+            found = await client.find(ref, order)
             if found:
-                return await _apply(bot, order_id, found)
+                return await _apply(bot, order_id, found, client)
     if exc.retriable:
         await _schedule_retry(bot, order_id, order, exc.human())
         return "retry"
@@ -203,14 +203,9 @@ async def _on_error(bot: Bot, client: CoinDrop, order_id: int, ref: str, exc: Co
     return "error"
 
 
-async def _apply(bot: Bot, order_id: int, data: dict) -> str:
+async def _apply(bot: Bot, order_id: int, data: dict, client: Provider) -> str:
     """Provayder javobini (yaratish/so'rash/ro'yxat) bizning holatga o'tkazadi."""
-    status = str(data.get("status") or "").lower()
-    pid = str(data.get("order_id") or data.get("id") or "") or None
-    try:
-        cost = float(data.get("amount_usd")) if data.get("amount_usd") is not None else None
-    except (TypeError, ValueError):
-        cost = None
+    status, pid, cost = client.normalize(data)
 
     if status == "delivered":
         await db.set_provider(order_id, "delivered", pid, None, cost)
@@ -266,22 +261,23 @@ async def _finalize_failed(bot: Bot, order_id: int) -> None:
 # ---------------- fon worker ----------------
 
 async def tick(bot: Bot) -> None:
-    client = await get_client()
-    if client is None:
-        return
     now = time.time()
     polled = 0
     for o in await db.provider_work(int(now) - 120):
         oid, ps = o["id"], o["provider_status"]
+        # Har bir buyurtma o'zi yuborilgan provayder orqali kuzatiladi (kalit bo'lsa kifoya)
+        client = await provider_by_name(o["provider_name"])
+        if client is None:
+            continue
         try:
             if ps == "retry":
                 if now - (o["provider_updated"] or 0) >= 30 * max(o["provider_attempts"] or 1, 1):
                     await fulfill(bot, oid)
             elif ps == "sending":
                 # javob yo'qolgan: external_ref bo'yicha aniqlaymiz
-                found = await client.find_by_ref(f"sg-{oid}")
+                found = await client.find(f"sg-{oid}", o)
                 if found:
-                    await _apply(bot, oid, found)
+                    await _apply(bot, oid, found, client)
                 else:
                     await db.set_provider(oid, "retry", error="Javob olinmadi")
                     await refresh_admin_card(bot, oid)
@@ -291,7 +287,7 @@ async def tick(bot: Bot) -> None:
                     await refresh_admin_card(bot, oid)
                     await notify_admin(bot, card(
                         "warn", f"Buyurtma #{oid}: API uzoq javob bermayapti",
-                        f"{STALE_AFTER // 60} daqiqadan oshdi. Coindrop dashboardida tekshiring; "
+                        f"{STALE_AFTER // 60} daqiqadan oshdi. {client.title} kabinetida tekshiring; "
                         "kerak bo'lsa qo'lda hal qiling.",
                     ))
                 if polled >= 25 or now - _last_poll.get(oid, 0) < POLL_EVERY:
@@ -299,11 +295,11 @@ async def tick(bot: Bot) -> None:
                 polled += 1
                 _last_poll[oid] = now
                 if o["provider_order_id"]:
-                    data = await client.get_order(o["provider_order_id"])
+                    data = await client.get(o["provider_order_id"])
                 else:
-                    data = await client.find_by_ref(f"sg-{oid}")
-                if data and str(data.get("status") or "").lower() in ("delivered", "failed"):
-                    await _apply(bot, oid, data)
+                    data = await client.find(f"sg-{oid}", o)
+                if data and client.normalize(data)[0] in ("delivered", "failed"):
+                    await _apply(bot, oid, data, client)
         except CoinDropError as exc:
             log.warning("Worker: buyurtma #%s: %s", oid, exc)
             if exc.kind == "auth":
@@ -313,7 +309,7 @@ async def tick(bot: Bot) -> None:
 
 
 async def worker(bot: Bot) -> None:
-    log.info("Coindrop worker ishga tushdi")
+    log.info("API worker ishga tushdi")
     while True:
         try:
             await tick(bot)

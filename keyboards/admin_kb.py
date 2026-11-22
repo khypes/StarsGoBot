@@ -96,12 +96,13 @@ def channels_kb(channels) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def coindrop_kb(auto_on: bool, has_key: bool) -> InlineKeyboardMarkup:
+def coindrop_kb(auto_on: bool, has_key: bool, usd: bool = False) -> InlineKeyboardMarkup:
     toggle = ibtn("cancel", "Avto-yetkazishni o'chirish", callback_data="cd:toggle") if auto_on \
         else ibtn("auto", "Avto-yetkazishni yoqish", style="success", callback_data="cd:toggle")
     rows = [
         [ibtn("apikey", "API kalitni o'zgartirish" if has_key else "API kalit kiritish",
-              style=None if has_key else "primary", callback_data="cd:key")],
+              style=None if has_key else "primary", callback_data="cd:key"),
+         ibtn("api", "Provayder", callback_data="cd:prov")],
     ]
     if has_key:
         rows += [
@@ -109,7 +110,8 @@ def coindrop_kb(auto_on: bool, has_key: bool) -> InlineKeyboardMarkup:
             [ibtn("refresh", "Balansni yangilash", callback_data="cd:refresh"),
              ibtn("sync", "Narxlarni sinxronlash", callback_data="cd:sync")],
             [ibtn("ref_percent", "Ustama foiz", callback_data="cd:markup"),
-             ibtn("trash", "Kalitni o'chirish", style="danger", callback_data="cd:delkey")],
+             *([ibtn("currency", "Dollar kursi", callback_data="cd:rate")] if usd else [])],
+            [ibtn("trash", "Kalitni o'chirish", style="danger", callback_data="cd:delkey")],
         ]
     rows.append([ibtn("back", "Orqaga", callback_data="a:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
