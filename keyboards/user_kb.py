@@ -10,11 +10,11 @@ def grid(buttons: list, cols: int) -> list[list]:
 
 
 def main_menu(is_admin: bool = False, uc: bool = False) -> InlineKeyboardMarkup:
-    """Bitta katta inline klaviatura: yuqorida mahsulotlar (to'liq kenglikdagi katta tugmalar), pastda bo'limlar."""
+    """Asosiy menyu. UC yoqilgan bo'lsa, Stars/Premium qatori ostida alohida (yagona) tugma sifatida chiqadi."""
     def b(key: str, cb: str):
         return ibtn(key, label(key), callback_data=cb)
 
-    rows = [[b("stars", "m:stars")], [b("premium", "m:premium")]]
+    rows = [[b("stars", "m:stars"), b("premium", "m:premium")]]
     if uc:
         rows.append([b("uc", "m:uc")])
     rows += [

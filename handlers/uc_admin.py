@@ -1,4 +1,4 @@
-"""Admin panel: UC (PUBG Mobile) sotish tizimi — yoqish/o'chirish, narx sinxronlash (Coindrop API), paketlar, ustama, statistika."""
+"""Admin panel: UC (PUBG Mobile) sotish tizimi. Stars/Premium dan to'liq mustaqil: o'z API kaliti, o'z avto-yetkazishi, narxlari va statistikasi."""
 import time
 
 from aiogram import Router, F
@@ -36,7 +36,12 @@ def _ago(ts: int) -> str:
 
 
 async def _coindrop():
-    return await fulfillment.provider_by_name("coindrop")
+    """UC uchun alohida Coindrop kaliti (Stars/Premium sozlamalaridan mustaqil)."""
+    return await fulfillment.provider_by_name("coindrop", "uc")
+
+
+def mask(key: str) -> str:
+    return f"{key[:5]}…{key[-4:]}" if len(key) > 10 else "•••"
 
 
 # ==================== asosiy ekran ====================
@@ -44,8 +49,8 @@ async def _coindrop():
 async def uc_view(flash: str | None = None):
     prices = await db.get_uc_prices()
     on = (await db.get_setting("uc_enabled")) == "1"
-    has_key = await fulfillment.has_key("coindrop")
-    auto = await fulfillment.auto_ready("uc")
+    key = await fulfillment.api_key(scope="uc")
+    auto_on = await fulfillment.is_enabled("uc")
     cur = esc(await currency())
     done, total_uc, revenue, pending = await db.uc_stats()
 
@@ -53,31 +58,51 @@ async def uc_view(flash: str | None = None):
     lines += [
         f"{em('done' if on and prices else 'cancel')} Sotuv: <b>{'yoqilgan' if on else "o'chirilgan"}</b>"
         + ("" if prices else " (paketlar yo'q)"),
-        f"{em('api')} Yetkazish: <b>{'avtomatik (Coindrop API)' if auto else "qo'lda (admin bajaradi)"}</b>",
         f"{em('ref_percent')} Narx ustamasi: <b>{esc(await db.get_setting('uc_markup'))}%</b>",
         f"{em('uc')} Paketlar: <b>{len(prices)}</b> ta · {_ago(int(await db.get_setting('uc_synced_at') or 0))}",
+    ]
+    if key:
+        lines += [
+            "",
+            f"{em('apikey')} API kalit: <code>{esc(mask(key))}</code>",
+            f"{em('auto')} Avto-yetkazish: <b>{'yoqilgan' if auto_on else "o'chirilgan (admin qo'lda bajaradi)"}</b>",
+        ]
+        try:
+            acc = await CoindropProvider(key).account()
+            lines += [f"{em('money')} {line}" for line in (acc.get("lines") or [])[:1]]
+            if acc.get("warn"):
+                lines.append(f"{em('warn')} {esc(acc['warn'])}")
+        except CoinDropError as exc:
+            lines.append(f"{em('warn')} <b>Ulanib bo'lmadi:</b> {esc(exc.human())}")
+    else:
+        lines += ["", f"{em('warn')} UC uchun API kalit kiritilmagan.",
+                  "Kalit: coindrop.uz → Profil → Security &amp; API Key (<code>cd_...</code>). "
+                  "Bu kalit Stars/Premium kalitidan alohida saqlanadi."]
+    lines += [
         "",
         f"{em('stats')} Bajarilgan: <b>{done}</b> ta · <b>{fmt_num(total_uc)}</b> UC · {fmt_num(revenue)} {cur}",
         f"{em('pending')} Kutilayotgan: <b>{pending}</b> ta",
     ]
-    if not has_key:
-        lines += ["", f"{em('warn')} Coindrop API kaliti kiritilmagan. «API» bo'limida Coindrop kalitini ulang — "
-                      "UC avtomatik yetkaziladi va narxlarni sinxronlash mumkin bo'ladi."]
-    elif not auto:
-        lines += ["", f"{em('warn')} Avto-yetkazish o'chirilgan — UC buyurtmalar sizga qo'lda bajarish uchun keladi."]
     if prices:
         lines += ["", "<b>Paketlar:</b>"]
         lines += [f"{em('uc')} {fmt_num(p['uc'])} UC — <b>{fmt_num(p['price'])}</b> {cur}"
                   + (f" (tannarx {fmt_num(p['cost'])})" if p.get("cost") else "") for p in prices]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [ibtn("cancel" if on else "auto", "Sotuvni o'chirish" if on else "Sotuvni yoqish",
-              style=None if on else "success", callback_data="uc:toggle")],
-        [ibtn("sync", "Narxlarni sinxronlash", callback_data="uc:sync"),
-         ibtn("ref_percent", "Ustama foiz", callback_data="uc:markup")],
-        *([[ibtn("uc", "Paketlarni boshqarish", callback_data="uc:list")]] if prices else []),
-        [ibtn("api", "Coindrop API", callback_data="a:cd"), ibtn("back", "Orqaga", callback_data="a:home")],
-    ])
-    return card("uc_sell", "UC sotish (PUBG Mobile)", *lines, expandable=len(prices) > 6), kb
+    rows = [[ibtn("cancel" if on else "auto", "Sotuvni o'chirish" if on else "Sotuvni yoqish",
+                  style=None if on else "success", callback_data="uc:toggle")]]
+    rows.append([ibtn("apikey", "API kalitni o'zgartirish" if key else "API kalit kiritish",
+                      style=None if key else "primary", callback_data="uc:key")])
+    if key:
+        rows.append([ibtn("cancel" if auto_on else "auto", "Avto-yetkazishni o'chirish" if auto_on else "Avto-yetkazishni yoqish",
+                          style=None if auto_on else "success", callback_data="uc:auto"),
+                     ibtn("refresh", "Balans", callback_data="a:uc")])
+        rows.append([ibtn("sync", "Narxlarni sinxronlash", callback_data="uc:sync"),
+                     ibtn("ref_percent", "Ustama foiz", callback_data="uc:markup")])
+    if prices:
+        rows.append([ibtn("uc", "Paketlarni boshqarish", callback_data="uc:list")])
+    if key:
+        rows.append([ibtn("trash", "Kalitni o'chirish", style="danger", callback_data="uc:delkey")])
+    rows.append([ibtn("back", "Orqaga", callback_data="a:home")])
+    return card("uc_sell", "UC sotish (PUBG Mobile)", *lines, expandable=len(prices) > 6), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @router.callback_query(F.data == "a:uc")
@@ -91,14 +116,84 @@ async def cb_open(call: CallbackQuery, state: FSMContext):
 async def cb_toggle(call: CallbackQuery):
     on = (await db.get_setting("uc_enabled")) == "1"
     if not on:
+        if not await fulfillment.has_key(scope="uc"):
+            await call.answer("Avval UC uchun API kalitni kiriting", show_alert=True)
+            return
         if not await db.get_uc_prices():
             await call.answer("Avval narxlarni sinxronlang", show_alert=True)
             return
-        if not await fulfillment.has_key("coindrop"):
-            await call.answer("Avval Coindrop API kalitini ulang", show_alert=True)
-            return
     await db.set_setting("uc_enabled", "0" if on else "1")
     await call.answer("O'chirildi" if on else "Yoqildi")
+    await show(call, *await uc_view())
+
+
+# ==================== API kalit va avto-yetkazish (Stars/Premium dan mustaqil) ====================
+
+@router.callback_query(F.data == "uc:key")
+async def cb_key(call: CallbackQuery, state: FSMContext):
+    await call.answer()
+    await ask(call, state, AdminUC.waiting_key, card(
+        "apikey", "UC uchun API kalit",
+        "Coindrop kalitingizni yuboring (<code>cd_...</code> bilan boshlanadi).",
+        "Kalitni olish: coindrop.uz → Profil → Security &amp; API Key",
+        "",
+        f"{em('info')} Bu kalit faqat UC sotuvi uchun ishlatiladi va Stars/Premium sozlamalariga ta'sir qilmaydi.",
+        "Xavfsizlik uchun xabaringiz darhol o'chiriladi.",
+    ), back="a:uc")
+
+
+@router.message(AdminUC.waiting_key, F.text)
+async def key_receive(message: Message, state: FSMContext):
+    key = message.text.strip()
+    if not CoindropProvider.key_re.match(key):
+        await invalid(message, state, "Kalit noto'g'ri ko'rinishda. U cd_ bilan boshlanadi.")
+        return
+    try:
+        await CoindropProvider(key).account()
+    except CoinDropError as exc:
+        await invalid(message, state, exc.human())
+        return
+    await db.set_setting("uc_api_key", key)
+    await db.set_setting("uc_auto", "1")
+    await finish(message, state, *await uc_view(
+        f"{em('done')} <b>Ulandi!</b> UC avto-yetkazish yoqildi. Endi narxlarni sinxronlang va sotuvni yoqing."))
+
+
+@router.message(AdminUC.waiting_key)
+async def key_invalid(message: Message, state: FSMContext):
+    await invalid(message, state, "Kalitni matn ko'rinishida yuboring.")
+
+
+@router.callback_query(F.data == "uc:auto")
+async def cb_auto(call: CallbackQuery):
+    if not await fulfillment.has_key(scope="uc"):
+        await call.answer("Avval API kalitni kiriting", show_alert=True)
+        return
+    new_val = "0" if await fulfillment.is_enabled("uc") else "1"
+    await db.set_setting("uc_auto", new_val)
+    await call.answer("Yoqildi" if new_val == "1" else "O'chirildi")
+    await show(call, *await uc_view())
+
+
+@router.callback_query(F.data == "uc:delkey")
+async def cb_delkey(call: CallbackQuery):
+    await call.answer()
+    await show(call, card(
+        "warn", "UC kalitini o'chirishni tasdiqlang",
+        "UC avto-yetkazish to'xtaydi va sotuv o'chiriladi.",
+        "API da jarayonda turgan UC buyurtmalar kuzatilmay qoladi.",
+    ), InlineKeyboardMarkup(inline_keyboard=[[
+        ibtn("done", "Ha, o'chirish", style="danger", callback_data="uc:delkey_yes"),
+        ibtn("cancel", "Yo'q", callback_data="a:uc"),
+    ]]))
+
+
+@router.callback_query(F.data == "uc:delkey_yes")
+async def cb_delkey_yes(call: CallbackQuery):
+    await db.set_setting("uc_api_key", "")
+    await db.set_setting("uc_auto", "0")
+    await db.set_setting("uc_enabled", "0")
+    await call.answer("Kalit o'chirildi")
     await show(call, *await uc_view())
 
 
@@ -108,7 +203,7 @@ async def cb_toggle(call: CallbackQuery):
 async def cb_sync(call: CallbackQuery, state: FSMContext):
     prov = await _coindrop()
     if prov is None:
-        await call.answer("Avval Coindrop API kalitini ulang", show_alert=True)
+        await call.answer("Avval UC uchun API kalitni kiriting", show_alert=True)
         return
     await call.answer("Narxlar yuklanmoqda…")
     markup = int(await db.get_setting("uc_markup") or 0)

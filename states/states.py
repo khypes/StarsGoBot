@@ -7,6 +7,7 @@ class Purchase(StatesGroup):
 
 
 class AdminUC(StatesGroup):
+    waiting_key = State()
     waiting_markup = State()
     waiting_price = State()
 

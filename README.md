@@ -35,10 +35,10 @@ Ishlamasa, bot avtomatik oddiy emojiga qaytadi — xato bermaydi.
 
 ## 🎮 UC sotish (PUBG Mobile)
 
-`Boshqaruv → 🪙 UC sotish`: Coindrop API kaliti ulangach «Narxlarni sinxronlash» paketlarni (UC miqdori, narx, mahsulot ID) yuklaydi,
-«Ustama foiz» narxni belgilaydi, paketni alohida o'zgartirish/o'chirish mumkin, so'ng «Sotuvni yoqish».
-Foydalanuvchi: UC olish → paket → Player ID → tasdiqlash. UC buyurtmalar Coindrop `pubg-mobile` orqali avtomatik yetkaziladi
-(faol provayder TgSuperstars bo'lsa ham). API ulanmagan bo'lsa buyurtma adminga qo'lda bajarish uchun keladi.
+UC tizimi Stars/Premium dan **to'liq mustaqil**: o'z API kaliti, o'z avto-yetkazish tugmasi, o'z narxlari va statistikasi.
+`Boshqaruv → 🪙 UC sotish`: «API kalit kiritish» (Coindrop `cd_...`) → «Narxlarni sinxronlash» → «Ustama foiz» → «Sotuvni yoqish».
+Paketni alohida o'zgartirish/o'chirish mumkin. Foydalanuvchi: UC olish → paket → Player ID → tasdiqlash.
+UC buyurtmalar Coindrop `pubg-mobile` orqali avtomatik yetkaziladi; avto-yetkazish o'chiq bo'lsa, buyurtma adminga qo'lda bajarish uchun keladi.
 
 ## 🔌 API provayderlar (avto-yetkazish)
 

@@ -52,7 +52,7 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     "premium_prices": ("💎", "admin", "Premium narxlari"),
     "notify": ("🔔", "admin", "Bildirishnoma"),
     "admins": ("🛡", "admin", "Adminlar"),
-    "api": ("🔌", "admin", "API provayder"),
+    "api": ("🔌", "admin", "Stars/Premium API"),
     "apikey": ("🗝", "admin", "API kalit"),
     "auto": ("⚡", "admin", "Avto-yetkazish"),
     "refresh": ("🔄", "admin", "Yangilash"),

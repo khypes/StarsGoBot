@@ -52,24 +52,41 @@ async def active_name() -> str:
     return name if name in REGISTRY else DEFAULT_PROVIDER
 
 
-async def api_key(name: str | None = None) -> str:
+def scope_of(order) -> str:
+    """UC sotuvi Stars/Premium dan butunlay alohida: o'z kaliti va o'z avto-yetkazish tugmasi bor."""
+    return "uc" if order["order_type"] == "uc" else "shop"
+
+
+async def api_key(name: str | None = None, scope: str = "shop") -> str:
+    if scope == "uc":
+        return (await db.get_setting("uc_api_key")) or ""
     cls = REGISTRY[name or await active_name()]
     return (await db.get_setting(cls.key_setting)) or (os.getenv(cls.key_env, "").strip() if cls.key_env else "")
 
 
-async def has_key(name: str | None = None) -> bool:
-    return bool(await api_key(name))
+async def has_key(name: str | None = None, scope: str = "shop") -> bool:
+    return bool(await api_key(name, scope))
 
 
-async def is_enabled() -> bool:
-    return (await db.get_setting("coindrop_enabled")) == "1"
+async def is_enabled(scope: str = "shop") -> bool:
+    return (await db.get_setting("uc_auto" if scope == "uc" else "coindrop_enabled")) == "1"
 
 
-async def provider_by_name(name: str | None) -> Provider | None:
+async def provider_by_name(name: str | None, scope: str = "shop") -> Provider | None:
     """Kalit mavjud bo'lsa provayderni qaytaradi (yoqilgan-o'chirilganiga qaramasdan: kuzatish uchun)."""
+    if scope == "uc":
+        key = await api_key(scope="uc")
+        return REGISTRY["coindrop"](key) if key else None
     name = name if name in REGISTRY else DEFAULT_PROVIDER
     key = await api_key(name)
     return REGISTRY[name](key) if key else None
+
+
+async def get_client(name: str | None = None, scope: str = "shop") -> Provider | None:
+    """Avto-yetkazish yoqilgan va kalit mavjud bo'lsagina provayderni qaytaradi (standart: faol provayder)."""
+    if not await is_enabled(scope):
+        return None
+    return await provider_by_name(name or (None if scope == "uc" else await active_name()), scope)
 
 
 def provider_name_for(order) -> str | None:
@@ -81,14 +98,7 @@ def provider_name_for(order) -> str | None:
 
 async def auto_ready(kind: str) -> bool:
     """Shu turdagi buyurtma avtomatik yetkazilishi mumkinmi (kalit bor va avto-yetkazish yoqilgan)."""
-    return await get_client("coindrop" if kind == "uc" else None) is not None
-
-
-async def get_client(name: str | None = None) -> Provider | None:
-    """Avto-yetkazish yoqilgan va kalit mavjud bo'lsagina provayderni qaytaradi (standart: faol provayder)."""
-    if not await is_enabled():
-        return None
-    return await provider_by_name(name or await active_name())
+    return await get_client(scope="uc" if kind == "uc" else "shop") is not None
 
 
 # ---------------- admin xabarlari ----------------
@@ -103,7 +113,7 @@ async def order_view(order_id: int):
     if order["status"] == "kutilmoqda":
         kb = order_action_kb(
             order_id, order["provider_status"], locked=provider_locked(order),
-            api_ready=await get_client(provider_name_for(order)) is not None,
+            api_ready=await get_client(provider_name_for(order), scope_of(order)) is not None,
         )
     return await order_card(order, user), kb
 
@@ -135,7 +145,7 @@ async def on_new_order(bot: Bot, order_id: int) -> None:
                 msg = await bot.send_message(ADMIN_CHAT_ID, view[0], reply_markup=view[1])
                 await db.set_admin_msg(order_id, msg.message_id)
     order = await db.get_order(order_id)
-    if order and await get_client(provider_name_for(order)) is not None:
+    if order and await get_client(provider_name_for(order), scope_of(order)) is not None:
         spawn(fulfill(bot, order_id))
 
 
@@ -147,7 +157,7 @@ async def fulfill(bot: Bot, order_id: int) -> str:
     if order is None or order["status"] != "kutilmoqda":
         return "closed"
     # Oldingi urinish bo'lgan buyurtma shu provayder bilan davom etadi (provayder almashsa ham)
-    client = await get_client(provider_name_for(order))
+    client = await get_client(provider_name_for(order), scope_of(order))
     if client is None:
         return "disabled"
 
@@ -279,7 +289,7 @@ async def tick(bot: Bot) -> None:
     for o in await db.provider_work(int(now) - 120):
         oid, ps = o["id"], o["provider_status"]
         # Har bir buyurtma o'zi yuborilgan provayder orqali kuzatiladi (kalit bo'lsa kifoya)
-        client = await provider_by_name(provider_name_for(o))
+        client = await provider_by_name(provider_name_for(o), scope_of(o))
         if client is None:
             continue
         try:

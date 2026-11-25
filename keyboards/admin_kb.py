@@ -13,7 +13,8 @@ def admin_home_kb() -> InlineKeyboardMarkup:
         [_b("stats", "a:stats"), _b("broadcast", "a:bc")],
         [_b("users", "a:users"), _b("payment", "a:pay")],
         [_b("channels", "a:ch"), _b("settings", "a:set")],
-        [_b("uc_sell", "a:uc"), _b("api", "a:cd")],
+        [_b("api", "a:cd")],
+        [_b("uc_sell", "a:uc")],
         [_b("emojis", "em:home"), _b("palette", "col:home")],
         [ibtn("back", "Bosh menyu", callback_data="m:home")],
     ])

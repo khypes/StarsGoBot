@@ -94,6 +94,8 @@ _DEFAULT_SETTINGS = {
     "coindrop_api_key": "",
     "coindrop_enabled": "0",
     "coindrop_markup": "10",
+    "uc_api_key": "",               # UC uchun alohida Coindrop kaliti (Stars/Premium dan mustaqil)
+    "uc_auto": "0",                 # UC avto-yetkazish (Stars/Premium dan mustaqil)
     "uc_enabled": "0",              # UC (PUBG Mobile) sotuvi
     "uc_prices": "[]",              # [{"uc":60,"price":13000,"cost":10000,"product_id":"123"}]
     "uc_markup": "10",
