@@ -208,14 +208,16 @@ async def cb_sync(call: CallbackQuery, state: FSMContext):
     await call.answer("Narxlar yuklanmoqda…")
     markup = int(await db.get_setting("uc_markup") or 0)
     try:
-        items = await CoindropProvider(prov.api_key).uc_list(markup)
+        client = CoindropProvider(prov.api_key)
+        items = await client.uc_list(markup)
     except CoinDropError as exc:
         await show(call, *await uc_view(f"{em('warn')} <b>Narxlarni olib bo'lmadi:</b> {esc(exc.human())}"))
         return
     if not items:
-        await show(call, *await uc_view(f"{em('warn')} Coindrop PUBG Mobile paketlarini qaytarmadi."))
+        await show(call, *await uc_view(
+            f"{em('warn')} <b>UC paketlarini topib bo'lmadi.</b>\n{esc(client.last_diag)}"))
         return
-    await state.update_data(uc_sync=items)
+    await state.update_data(uc_sync=items, uc_game=client.uc_game)
     cur = esc(await currency())
     lines = [f"Ustama: <b>{markup}%</b> (Coindrop narxi → sizning narxingiz)", ""]
     lines += [f"{em('uc')} {fmt_num(i['uc'])} UC: {fmt_num(i['cost'])} → <b>{fmt_num(i['price'])}</b> {cur}" for i in items]
@@ -237,6 +239,9 @@ async def cb_sync_apply(call: CallbackQuery, state: FSMContext):
         return
     await db.set_uc_prices(items)
     await db.set_setting("uc_synced_at", str(int(time.time())))
+    game = (await state.get_data()).get("uc_game")
+    if game:
+        await db.set_setting("uc_game_key", game)
     await state.clear()
     await call.answer("Narxlar yangilandi")
     await show(call, *await uc_view(f"{em('done')} <b>{len(items)} ta UC paketi yangilandi.</b>"))

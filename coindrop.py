@@ -127,6 +127,11 @@ class CoinDrop:
     async def balance(self) -> dict:
         return await self._request("GET", "/balance")
 
+    # ---- o'yinlar ----
+    async def games(self) -> list[dict]:
+        data = await self._request("GET", "/games")
+        return data.get("games") or data.get("data") or []
+
     # ---- mahsulotlar ----
     async def products(self, game_key: str) -> list[dict]:
         data = await self._request("GET", f"/games/{game_key}/products")

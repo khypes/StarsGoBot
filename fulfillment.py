@@ -76,7 +76,11 @@ async def provider_by_name(name: str | None, scope: str = "shop") -> Provider | 
     """Kalit mavjud bo'lsa provayderni qaytaradi (yoqilgan-o'chirilganiga qaramasdan: kuzatish uchun)."""
     if scope == "uc":
         key = await api_key(scope="uc")
-        return REGISTRY["coindrop"](key) if key else None
+        if not key:
+            return None
+        prov = REGISTRY["coindrop"](key)
+        prov.uc_game = (await db.get_setting("uc_game_key")) or prov.uc_game
+        return prov
     name = name if name in REGISTRY else DEFAULT_PROVIDER
     key = await api_key(name)
     return REGISTRY[name](key) if key else None

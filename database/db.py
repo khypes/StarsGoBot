@@ -100,6 +100,7 @@ _DEFAULT_SETTINGS = {
     "uc_prices": "[]",              # [{"uc":60,"price":13000,"cost":10000,"product_id":"123"}]
     "uc_markup": "10",
     "uc_synced_at": "0",
+    "uc_game_key": "",              # Coindrop PUBG o'yin kaliti (sinxronlashda aniqlanadi)
     "api_provider": "coindrop",     # faol provayder: coindrop | tgsuperstars
     "tgss_api_key": "",
     "usd_rate": "0",                # 1$ necha so'm (USD bilan ishlaydigan provayderlar uchun)
