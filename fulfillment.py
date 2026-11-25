@@ -72,6 +72,18 @@ async def provider_by_name(name: str | None) -> Provider | None:
     return REGISTRY[name](key) if key else None
 
 
+def provider_name_for(order) -> str | None:
+    """UC faqat Coindrop orqali sotiladi; Stars/Premium — buyurtma yuborilgan yoki faol provayder."""
+    if order["provider_name"]:
+        return order["provider_name"]
+    return "coindrop" if order["order_type"] == "uc" else None
+
+
+async def auto_ready(kind: str) -> bool:
+    """Shu turdagi buyurtma avtomatik yetkazilishi mumkinmi (kalit bor va avto-yetkazish yoqilgan)."""
+    return await get_client("coindrop" if kind == "uc" else None) is not None
+
+
 async def get_client(name: str | None = None) -> Provider | None:
     """Avto-yetkazish yoqilgan va kalit mavjud bo'lsagina provayderni qaytaradi (standart: faol provayder)."""
     if not await is_enabled():
@@ -91,7 +103,7 @@ async def order_view(order_id: int):
     if order["status"] == "kutilmoqda":
         kb = order_action_kb(
             order_id, order["provider_status"], locked=provider_locked(order),
-            api_ready=await get_client(order["provider_name"]) is not None,
+            api_ready=await get_client(provider_name_for(order)) is not None,
         )
     return await order_card(order, user), kb
 
@@ -122,7 +134,8 @@ async def on_new_order(bot: Bot, order_id: int) -> None:
             with contextlib.suppress(Exception):
                 msg = await bot.send_message(ADMIN_CHAT_ID, view[0], reply_markup=view[1])
                 await db.set_admin_msg(order_id, msg.message_id)
-    if await get_client() is not None:
+    order = await db.get_order(order_id)
+    if order and await get_client(provider_name_for(order)) is not None:
         spawn(fulfill(bot, order_id))
 
 
@@ -134,7 +147,7 @@ async def fulfill(bot: Bot, order_id: int) -> str:
     if order is None or order["status"] != "kutilmoqda":
         return "closed"
     # Oldingi urinish bo'lgan buyurtma shu provayder bilan davom etadi (provayder almashsa ham)
-    client = await get_client(order["provider_name"])
+    client = await get_client(provider_name_for(order))
     if client is None:
         return "disabled"
 
@@ -266,7 +279,7 @@ async def tick(bot: Bot) -> None:
     for o in await db.provider_work(int(now) - 120):
         oid, ps = o["id"], o["provider_status"]
         # Har bir buyurtma o'zi yuborilgan provayder orqali kuzatiladi (kalit bo'lsa kifoya)
-        client = await provider_by_name(o["provider_name"])
+        client = await provider_by_name(provider_name_for(o))
         if client is None:
             continue
         try:

@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
-    order_type TEXT,          -- 'stars' | 'premium'
+    order_type TEXT,          -- 'stars' | 'premium' | 'uc'
     detail TEXT,
     price INTEGER,
     status TEXT DEFAULT 'kutilmoqda',  -- kutilmoqda | bajarildi | bekor qilindi
@@ -85,6 +85,7 @@ _ORDER_COLUMNS = {
     "provider_attempts": "INTEGER DEFAULT 0",
     "provider_updated": "INTEGER",
     "provider_cost_usd": "REAL",
+    "product_id": "TEXT",           # provayder mahsulot ID si (UC paketlari uchun)
     "provider_name": "TEXT",        # buyurtma qaysi API orqali yuborilgan (NULL = coindrop)
     "admin_msg_id": "INTEGER",
 }
@@ -93,6 +94,10 @@ _DEFAULT_SETTINGS = {
     "coindrop_api_key": "",
     "coindrop_enabled": "0",
     "coindrop_markup": "10",
+    "uc_enabled": "0",              # UC (PUBG Mobile) sotuvi
+    "uc_prices": "[]",              # [{"uc":60,"price":13000,"cost":10000,"product_id":"123"}]
+    "uc_markup": "10",
+    "uc_synced_at": "0",
     "api_provider": "coindrop",     # faol provayder: coindrop | tgsuperstars
     "tgss_api_key": "",
     "usd_rate": "0",                # 1$ necha so'm (USD bilan ishlaydigan provayderlar uchun)
@@ -221,7 +226,7 @@ async def referral_count(user_id: int):
 # ---------- orders ----------
 
 async def purchase(user_id: int, order_type: str, detail: str, price: int,
-                   recipient: str = "", quantity: int = 0) -> int | None:
+                   recipient: str = "", quantity: int = 0, product_id: str | None = None) -> int | None:
     """Balansdan yechib, buyurtma yaratadi. Mablag' yetmasa None."""
     async with _lock:
         cur = await _db.execute(
@@ -233,8 +238,8 @@ async def purchase(user_id: int, order_type: str, detail: str, price: int,
             return None
         cur = await _db.execute(
             "INSERT INTO orders (user_id, order_type, detail, price, status, created_at, "
-            "recipient, quantity) VALUES (?, ?, ?, ?, 'kutilmoqda', ?, ?, ?)",
-            (user_id, order_type, detail, price, int(time.time()), recipient, quantity),
+            "recipient, quantity, product_id) VALUES (?, ?, ?, ?, 'kutilmoqda', ?, ?, ?, ?)",
+            (user_id, order_type, detail, price, int(time.time()), recipient, quantity, product_id),
         )
         await _db.commit()
         return cur.lastrowid
@@ -428,6 +433,30 @@ async def get_stars_prices():
 
 async def get_premium_prices():
     return json.loads(await get_setting("premium_prices") or "[]")
+
+
+async def get_uc_prices():
+    try:
+        return sorted(json.loads(await get_setting("uc_prices") or "[]"), key=lambda p: p["uc"])
+    except (ValueError, KeyError, TypeError):
+        return []
+
+
+async def set_uc_prices(items: list):
+    await set_setting("uc_prices", json.dumps(items, ensure_ascii=False))
+
+
+async def uc_enabled() -> bool:
+    return (await get_setting("uc_enabled")) == "1" and bool(await get_uc_prices())
+
+
+async def uc_stats():
+    """(bajarilgan soni, jami UC, tushum, kutilayotgan soni)"""
+    row = await _one(
+        "SELECT COUNT(*), COALESCE(SUM(quantity),0), COALESCE(SUM(price),0) FROM orders "
+        "WHERE order_type='uc' AND status='bajarildi'")
+    pending = (await _one("SELECT COUNT(*) FROM orders WHERE order_type='uc' AND status='kutilmoqda'"))[0]
+    return row[0], row[1], row[2], pending
 
 
 # ---------- admins ----------

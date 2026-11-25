@@ -13,6 +13,7 @@ import tgsuperstars
 from coindrop import CoinDrop, CoinDropError
 
 MAX_STARS_PACKAGES = 20
+MAX_UC_PACKAGES = 24
 DEFAULT_STARS_QTYS = (50, 100, 250, 500, 1000)
 
 
@@ -41,6 +42,7 @@ class Provider:
     currency = "USD"            # provayder hisob-kitob valyutasi
     stars_min, stars_max = 50, 10_000
     months = (3, 6, 12)
+    supports_uc = False
 
     def __init__(self, api_key: str):
         self.api_key = api_key.strip()
@@ -94,11 +96,35 @@ class CoindropProvider(Provider):
     stars_min, stars_max = coindrop.STARS_MIN, coindrop.STARS_MAX
     months = coindrop.PREMIUM_MONTHS
 
+    supports_uc = True
+
     def __init__(self, api_key: str):
         super().__init__(api_key)
         self.client = CoinDrop(self.api_key)
 
+    async def uc_list(self, markup: int) -> list[dict]:
+        """PUBG Mobile UC paketlari: [{"uc", "price", "cost", "product_id"}] (so'mda, arzonidan qimmatiga)."""
+        best: dict[int, dict] = {}
+        for p in await self.client.products(coindrop.UC_GAME):
+            pid, cost = p.get("id"), _num(p.get("price_uzs"))
+            amount = p.get("amount")
+            if not amount:  # ba'zan miqdor faqat nomda: "60 UC"
+                m = re.search(r"(\d[\d\s]*)\s*UC", str(p.get("name") or ""), re.I)
+                amount = int(re.sub(r"\s", "", m.group(1))) if m else None
+            if pid in (None, "") or not cost or not amount or int(amount) <= 0:
+                continue
+            uc = int(amount)
+            item = {"uc": uc, "price": sale_price(cost, markup), "cost": int(cost), "product_id": str(pid)}
+            if uc not in best or item["cost"] < best[uc]["cost"]:
+                best[uc] = item
+        return [best[k] for k in sorted(best)][:MAX_UC_PACKAGES]
+
     def build_request(self, order) -> dict | None:
+        if order["order_type"] == "uc":
+            player, product_id = (order["recipient"] or "").strip(), (order["product_id"] or "").strip()
+            if not re.match(coindrop.UC_PLAYER_RE, player) or not product_id:
+                return None
+            return {"game_key": coindrop.UC_GAME, "player_id": player, "product_id": product_id}
         base = super().build_request(order)
         if base is None:
             return None

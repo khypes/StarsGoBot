@@ -18,6 +18,8 @@ TIMEOUT = 25
 
 STARS_GAME = "telegram-stars"
 PREMIUM_GAME = "telegram-premium"
+UC_GAME = "pubg-mobile"           # PUBG Mobile UC (Player ID bilan, product_id katalogdan)
+UC_PLAYER_RE = r"^\d{6,15}$"
 STARS_MIN, STARS_MAX = 50, 10_000
 PREMIUM_MONTHS = (3, 6, 12)
 

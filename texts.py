@@ -57,7 +57,10 @@ async def order_card(order, user) -> str:
         f"{em('orders')} {esc(order['detail'])}",
     ]
     if order["recipient"]:
-        lines.append(f"{em('link')} Qabul qiluvchi: <code>{esc(order['recipient'])}</code>")
+        if order["order_type"] == "uc":
+            lines.append(f"{em('uc_player')} Player ID: <code>{esc(order['recipient'])}</code>")
+        else:
+            lines.append(f"{em('link')} Qabul qiluvchi: <code>{esc(order['recipient'])}</code>")
     lines.append(f"{em('money')} {await price(order['price'])}")
     if order["provider_cost_usd"]:
         lines.append(f"{em('api')} {esc(title_of(order['provider_name']))} narxi: ${order['provider_cost_usd']:.2f}")

@@ -3,6 +3,12 @@ from aiogram.fsm.state import State, StatesGroup
 
 class Purchase(StatesGroup):
     waiting_recipient = State()
+    waiting_player = State()      # UC: PUBG Mobile Player ID
+
+
+class AdminUC(StatesGroup):
+    waiting_markup = State()
+    waiting_price = State()
 
 
 class TopUp(StatesGroup):
