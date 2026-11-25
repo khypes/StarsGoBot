@@ -9,6 +9,7 @@ Hujjat: https://coindrop.uz/api-docs
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 log = logging.getLogger(__name__)
@@ -133,9 +134,31 @@ class CoinDrop:
         return data.get("games") or data.get("data") or []
 
     # ---- mahsulotlar ----
+    last_raw = ""   # oxirgi /products javobining qisqa nusxasi (diagnostika uchun)
+
+    @staticmethod
+    def _extract_products(data: dict) -> list[dict]:
+        """Javob turli shaklda kelsa ham ro'yxatni topadi: products/data/items/packages, ichma-ich yoki guruhlangan."""
+        for key in ("products", "data", "items", "packages", "results"):
+            val = data.get(key)
+            if isinstance(val, list):
+                return [x for x in val if isinstance(x, dict)]
+            if isinstance(val, dict):
+                for sub in ("products", "items", "list"):
+                    if isinstance(val.get(sub), list):
+                        return [x for x in val[sub] if isinstance(x, dict)]
+                flat = [x for v in val.values() if isinstance(v, list) for x in v if isinstance(x, dict)]
+                if flat:
+                    return flat
+        return []
+
     async def products(self, game_key: str) -> list[dict]:
         data = await self._request("GET", f"/games/{game_key}/products")
-        return data.get("products") or []
+        try:
+            self.last_raw = json.dumps(data, ensure_ascii=False)[:300]
+        except (TypeError, ValueError):
+            self.last_raw = str(data)[:300]
+        return self._extract_products(data)
 
     # ---- buyurtmalar ----
     async def create_order(self, game_key: str, player_id: str, *, product_id: str | None = None,

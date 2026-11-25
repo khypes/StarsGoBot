@@ -149,7 +149,7 @@ class CoindropProvider(Provider):
                 notes.append(f"{game}: {exc.human()}")
                 continue
             if not products:
-                notes.append(f"{game}: mahsulotlar ro'yxati bo'sh")
+                notes.append(f"{game}: mahsulotlar ro'yxati bo'sh. Coindrop javobi: {self.client.last_raw}")
                 continue
             best: dict[int, dict] = {}
             skipped = 0
