@@ -12,7 +12,7 @@ from config import ADMIN_CHAT_ID, MAX_TOPUP
 from emojis import em, ibtn
 from keyboards.admin_kb import topup_action_kb
 from keyboards.user_kb import (
-    main_menu, back_kb, stars_prices_kb, premium_prices_kb, uc_prices_kb, channels_check_kb,
+    main_menu, back_kb, stars_prices_kb, premium_prices_kb, channels_check_kb,
     recipient_kb, confirm_kb,
 )
 from middlewares import missing_channels, forget
@@ -32,22 +32,19 @@ _buying: set[int] = set()  # bir foydalanuvchining parallel xaridlariga qarshi
 
 async def home_view(user_id: int, full_name: str):
     user = await db.get_user(user_id)
-    uc_on = await db.uc_enabled()
     text = card(
         "wave", f"Assalomu alaykum, {esc(full_name)}!",
-        f"{em('rocket')} StarsGo orqali Telegram Stars, Premium" + (" va PUBG Mobile UC" if uc_on else "")
-        + " ni tez va qulay sotib olasiz.",
+        f"{em('rocket')} StarsGo orqali Telegram Stars va Premium obunasini tez va qulay sotib olasiz.",
         "",
         f"{em('topup')} Balansingiz: <b>{await price(user['balance'] if user else 0)}</b>",
         "",
         f"{em('stars')} <b>Stars olish</b> — o'zingizga yoki do'stingizga",
         f"{em('premium')} <b>Premium olish</b> — 3, 6 yoki 12 oylik obuna",
-        *([f"{em('uc')} <b>UC olish</b> — PUBG Mobile, Player ID orqali"] if uc_on else []),
         f"{em('topup')} <b>Hisob to'ldirish</b> — xaridlar uchun balans",
         "",
         f"{em('down')} Davom etish uchun bo'limni tanlang:",
     )
-    return text, main_menu(await db.is_admin(user_id), uc_on)
+    return text, main_menu(await db.is_admin(user_id))
 
 
 async def account_view(user_id: int):
@@ -134,8 +131,6 @@ def guide_view():
         f"{em('stars')} <b>Stars</b> — Telegram ichidagi virtual valyuta. O'zingizga yoki boshqa akkauntga yuborish mumkin.",
         "",
         f"{em('premium')} <b>Premium</b> — Telegram Premium obunasi (3, 6 yoki 12 oy). Qabul qiluvchining akkauntida yoqiladi.",
-        "",
-        f"{em('uc')} <b>UC</b> — PUBG Mobile valyutasi. O'yindagi Player ID ni kiritasiz, UC akkauntingizga tushadi.",
         "",
         f"{em('topup')} <b>Hisob to'ldirish</b> — kartaga to'lov qilib, chekni yuborasiz. Admin tasdiqlagach mablag' balansga tushadi.",
         "",
@@ -305,77 +300,29 @@ async def appeal_receive(message: Message, state: FSMContext, bot: Bot):
 
 # ==================== Xarid (Stars / Premium) ====================
 
-_ICON = {"stars": "stars", "premium": "premium", "uc": "uc"}
-_BACK = {"stars": "m:stars", "premium": "m:premium", "uc": "m:uc"}
-_KIND = {"s": "stars", "p": "premium", "u": "uc"}
-PLAYER_RE = re.compile(r"^\d{6,15}$")
-
-
 async def _catalog_item(kind: str, qty: int):
     if kind == "stars":
         return next((p for p in await db.get_stars_prices() if p["stars"] == qty), None)
-    if kind == "uc":
-        if not await db.uc_enabled():
-            return None
-        return next((p for p in await db.get_uc_prices() if p["uc"] == qty), None)
     return next((p for p in await db.get_premium_prices() if p["months"] == qty), None)
 
 
 def _product_label(kind: str, qty: int, recipient: str | None = None) -> str:
-    if kind == "uc":
-        base = f"{fmt_num(qty)} UC (PUBG Mobile)"
-        return f"{base} → ID {recipient}" if recipient else base
     base = f"{fmt_num(qty)} Stars" if kind == "stars" else f"{qty} oylik Premium"
     return f"{base} → @{recipient}" if recipient else base
 
 
-# ==================== UC (PUBG Mobile) ro'yxati ====================
-
-@router.callback_query(F.data == "m:uc")
-async def cb_uc(call: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await call.answer()
-    prices = await db.get_uc_prices() if await db.uc_enabled() else []
-    if not prices:
-        await show(call, card("inbox", "UC olish", "Hozircha UC sotuvi mavjud emas. Keyinroq urinib ko'ring."), back_kb())
-        return
-    await show(
-        call,
-        card("uc", "UC olish — 1/3",
-             "PUBG Mobile uchun UC miqdorini tanlang. Narx tugmada ko'rsatilgan.",
-             "",
-             f"{em('info')} Keyingi qadamda o'yindagi Player ID ni kiritasiz va buyurtmani tasdiqlaysiz. "
-             "Pul faqat tasdiqlagandan keyin balansdan yechiladi."),
-        uc_prices_kb(prices, await currency()),
-    )
-
-
-@router.callback_query(F.data.regexp(r"^b:[spu]:\d+$"))
+@router.callback_query(F.data.regexp(r"^b:[sp]:\d+$"))
 async def cb_choose_product(call: CallbackQuery, state: FSMContext):
     _, code, raw = call.data.split(":")
-    kind, qty = _KIND[code], int(raw)
+    kind, qty = ("stars" if code == "s" else "premium"), int(raw)
     item = await _catalog_item(kind, qty)
     if not item:
         await call.answer("Narxlar yangilangan. Ro'yxatni qayta oching.", show_alert=True)
         return
-    back = _BACK[kind]
+    back = "m:stars" if kind == "stars" else "m:premium"
     await call.answer()
-    if kind == "uc":
-        await ask(
-            call, state, Purchase.waiting_player,
-            card("uc_player", "Player ID — 2/3",
-                 f"{em('uc')} Tanlandi: <b>{_product_label(kind, qty)}</b> · {await price(item['price'])}",
-                 "",
-                 "PUBG Mobile akkauntingizning <b>Player ID</b> raqamini yuboring (faqat raqamlar).",
-                 "O'yinda: profil rasmingiz → ID ko'rsatilgan joy.",
-                 "",
-                 f"{em('warn')} ID ni diqqat bilan tekshiring: UC noto'g'ri akkauntga tushsa, qaytarib bo'lmaydi."),
-            back=back, kb=back_kb(back),
-            kind=kind, qty=qty, price=item["price"], product_id=item.get("product_id"),
-        )
-        return
     own = call.from_user.username
-    icon = _ICON[kind]
+    icon = "stars" if kind == "stars" else "premium"
     own_hint = ("O'zingiz uchun bo'lsa — pastdagi «O'zimga» tugmasini bosing." if own
                 else "Telegram usernamengiz yo'q, shuning uchun boshqa akkaunt usernamesini kiriting.")
     await ask(
@@ -403,9 +350,8 @@ async def _confirm_view(user_id: int, data: dict, flash: str | None = None):
     lines += [
         "Ma'lumotlarni tekshiring:",
         "",
-        f"{em(_ICON[kind])} Mahsulot: <b>{_product_label(kind, qty)}</b>",
-        (f"{em('uc_player')} Player ID: <code>{esc(recipient)}</code>" if kind == "uc"
-         else f"{em('link')} Qabul qiluvchi: <code>@{esc(recipient)}</code>"),
+        f"{em('stars' if kind == 'stars' else 'premium')} Mahsulot: <b>{_product_label(kind, qty)}</b>",
+        f"{em('link')} Qabul qiluvchi: <code>@{esc(recipient)}</code>",
         f"{em('money')} Narxi: <b>{await price(cost)}</b>",
         f"{em('topup')} Balansingiz: {await price(user['balance'])}"
         + (f" → xariddan keyin: <b>{await price(left)}</b>" if left >= 0 else ""),
@@ -416,7 +362,8 @@ async def _confirm_view(user_id: int, data: dict, flash: str | None = None):
                      "Avval hisobni to'ldiring.")
     else:
         lines.append("«Tasdiqlash» bosilgach summa balansingizdan yechiladi va buyurtma yetkazila boshlaydi.")
-    return card("orders", "Buyurtmani tasdiqlang — 3/3", *lines), confirm_kb(await price(cost), _BACK[kind])
+    back = "m:stars" if kind == "stars" else "m:premium"
+    return card("orders", "Buyurtmani tasdiqlang — 3/3", *lines), confirm_kb(await price(cost), back)
 
 
 @router.message(Purchase.waiting_recipient, F.text)
@@ -430,24 +377,6 @@ async def purchase_recipient(message: Message, state: FSMContext):
     await state.set_state(None)  # ma'lumotlar saqlanadi, tasdiqlash tugma orqali
     text, kb = await _confirm_view(message.from_user.id, data)
     await render_input(message, state, text, kb)
-
-
-@router.message(Purchase.waiting_player, F.text)
-async def purchase_player(message: Message, state: FSMContext):
-    raw = message.text.strip().replace(" ", "")
-    if not PLAYER_RE.match(raw):
-        await invalid(message, state, "Player ID noto'g'ri. Faqat raqamlar (6–15 ta) yuboring. Masalan: 5242571586")
-        return
-    await state.update_data(recipient=raw)
-    data = await state.get_data()
-    await state.set_state(None)
-    text, kb = await _confirm_view(message.from_user.id, data)
-    await render_input(message, state, text, kb)
-
-
-@router.message(Purchase.waiting_player)
-async def purchase_player_invalid(message: Message, state: FSMContext):
-    await invalid(message, state, "Player ID ni matn (raqam) ko'rinishida yuboring.")
 
 
 @router.message(Purchase.waiting_recipient)
@@ -497,9 +426,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
 
         cost = item["price"]
         detail = _product_label(kind, qty, recipient)
-        order_id = await db.purchase(
-            uid, kind, detail, cost, recipient=recipient if kind == "uc" else f"@{recipient}",
-            quantity=qty, product_id=item.get("product_id"))
+        order_id = await db.purchase(uid, kind, detail, cost, recipient=f"@{recipient}", quantity=qty)
         if order_id is None:
             await call.answer()
             user = await db.get_user(uid)
@@ -519,10 +446,10 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext, bot: Bot):
 
         await state.clear()
         await call.answer("Buyurtma qabul qilindi!")
-        auto = await fulfillment.auto_ready(kind)
+        auto = await fulfillment.get_client() is not None
         await show(call, card(
             "done", f"Buyurtma #{order_id} qabul qilindi",
-            f"{em(_ICON[kind])} Mahsulot: <b>{esc(detail)}</b>",
+            f"{em('stars' if kind == 'stars' else 'premium')} Mahsulot: <b>{esc(detail)}</b>",
             f"{em('money')} To'langan: <b>{await price(cost)}</b>",
             "",
             (f"{em('auto')} <b>Avtomatik yetkazib berilmoqda.</b> Odatda bir necha daqiqa ichida tugaydi."

@@ -9,15 +9,12 @@ def grid(buttons: list, cols: int) -> list[list]:
     return [buttons[i:i + cols] for i in range(0, len(buttons), cols)]
 
 
-def main_menu(is_admin: bool = False, uc: bool = False) -> InlineKeyboardMarkup:
-    """Asosiy menyu. UC yoqilgan bo'lsa, Stars/Premium qatori ostida alohida (yagona) tugma sifatida chiqadi."""
+def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
     def b(key: str, cb: str):
         return ibtn(key, label(key), callback_data=cb)
 
-    rows = [[b("stars", "m:stars"), b("premium", "m:premium")]]
-    if uc:
-        rows.append([b("uc", "m:uc")])
-    rows += [
+    rows = [
+        [b("stars", "m:stars"), b("premium", "m:premium")],
         [b("account", "m:account"), b("topup", "m:topup")],
         [b("orders", "m:orders"), b("referral", "m:ref")],
         [b("appeal", "m:appeal"), b("guide", "m:guide")],
@@ -48,15 +45,6 @@ def premium_prices_kb(prices: list, currency: str) -> InlineKeyboardMarkup:
         for p in sorted(prices, key=lambda p: p["months"])
     ]
     rows = grid(buttons, 1) + [[ibtn("back", "Orqaga", callback_data="m:home")]]
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def uc_prices_kb(prices: list, currency: str) -> InlineKeyboardMarkup:
-    buttons = [
-        ibtn("uc", f"{fmt_num(p['uc'])} UC · {fmt_num(p['price'])} {currency}", callback_data=f"b:u:{p['uc']}")
-        for p in sorted(prices, key=lambda p: p["uc"])
-    ]
-    rows = grid(buttons, 2) + [[ibtn("back", "Orqaga", callback_data="m:home")]]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

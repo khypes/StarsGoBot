@@ -13,7 +13,7 @@ import fulfillment
 from config import BOT_TOKEN, DROP_PENDING_UPDATES, DB_PATH, DB_PERSISTENT, ADMIN_CHAT_ID
 from database.db import init_db, close_db
 from fallback import EmojiFallbackMiddleware
-from handlers import admin, coindrop_admin, emoji_admin, style_admin, uc_admin, user
+from handlers import admin, coindrop_admin, emoji_admin, style_admin, user
 from middlewares import AccessMiddleware
 
 log = logging.getLogger("starsgo")
@@ -47,7 +47,6 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(emoji_admin.router)
     dp.include_router(coindrop_admin.router)
-    dp.include_router(uc_admin.router)
     dp.include_router(style_admin.router)
     dp.include_router(user.router)
 

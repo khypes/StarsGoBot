@@ -29,7 +29,6 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     # --- asosiy menyu tugmalari ---
     "stars": ("⭐", "menu", "Stars olish"),
     "premium": ("🎁", "menu", "Premium olish"),
-    "uc": ("🎮", "menu", "UC olish"),
     "orders": ("📦", "menu", "Buyurtmalarim"),
     "account": ("👤", "menu", "Mening hisobim"),
     "topup": ("💰", "menu", "Hisob to'ldirish"),
@@ -52,14 +51,12 @@ SLOTS: dict[str, tuple[str, str, str]] = {
     "premium_prices": ("💎", "admin", "Premium narxlari"),
     "notify": ("🔔", "admin", "Bildirishnoma"),
     "admins": ("🛡", "admin", "Adminlar"),
-    "api": ("🔌", "admin", "Stars/Premium API"),
+    "api": ("🔌", "admin", "Coindrop API"),
     "apikey": ("🗝", "admin", "API kalit"),
     "auto": ("⚡", "admin", "Avto-yetkazish"),
     "refresh": ("🔄", "admin", "Yangilash"),
     "sync": ("🔁", "admin", "Narxlarni sinxronlash"),
     "palette": ("🎨", "admin", "Tugma ranglari"),
-    "uc_sell": ("🪙", "admin", "UC sotish"),
-    "uc_player": ("🕹", "msg", "PUBG Player ID"),
     # --- xabarlar va holatlar ---
     "wave": ("👋", "msg", "Salomlashish"),
     "rocket": ("🚀", "msg", "Raketa"),
@@ -99,7 +96,7 @@ STYLE_NAMES: dict[str, tuple[str, str]] = {
 
 # Tugma "kalit"lari (emoji slotlari bilan bir xil), ranglar shu kalit bo'yicha belgilanadi
 DEFAULT_STYLES: dict[str, str] = {
-    "stars": "primary", "premium": "primary", "uc": "primary", "uc_sell": "primary", "topup": "success", "panel": "danger",
+    "stars": "primary", "premium": "primary", "topup": "success", "panel": "danger",
     "stats": "primary", "broadcast": "primary", "payment": "success", "api": "primary",
     "apikey": "primary", "auto": "success", "sync": "primary", "emojis": "primary", "palette": "primary",
     "done": "success", "cancel": "danger", "ban": "danger", "trash": "danger", "plus": "success",
@@ -108,9 +105,9 @@ DEFAULT_STYLES: dict[str, str] = {
 
 # Rang berish mumkin bo'lgan tugmalar guruhlari
 STYLE_GROUPS: dict[str, tuple[str, list[str]]] = {
-    "menu": ("Asosiy menyu", ["stars", "premium", "uc", "account", "topup", "orders", "referral", "appeal", "guide", "panel"]),
+    "menu": ("Asosiy menyu", ["stars", "premium", "account", "topup", "orders", "referral", "appeal", "guide", "panel"]),
     "admin": ("Admin menyu", ["stats", "broadcast", "users", "payment", "channels", "settings", "api", "emojis",
-                              "palette", "uc_sell", "currency", "ref_percent", "stars_prices", "premium_prices", "notify",
+                              "palette", "currency", "ref_percent", "stars_prices", "premium_prices", "notify",
                               "admins", "apikey", "auto", "refresh", "sync"]),
     "actions": ("Amal tugmalari", ["done", "cancel", "back", "plus", "trash", "ban", "calendar", "megaphone",
                                    "prev", "next"]),

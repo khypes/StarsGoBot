@@ -13,7 +13,6 @@ import tgsuperstars
 from coindrop import CoinDrop, CoinDropError
 
 MAX_STARS_PACKAGES = 20
-MAX_UC_PACKAGES = 24
 DEFAULT_STARS_QTYS = (50, 100, 250, 500, 1000)
 
 
@@ -42,7 +41,6 @@ class Provider:
     currency = "USD"            # provayder hisob-kitob valyutasi
     stars_min, stars_max = 50, 10_000
     months = (3, 6, 12)
-    supports_uc = False
 
     def __init__(self, api_key: str):
         self.api_key = api_key.strip()
@@ -96,96 +94,11 @@ class CoindropProvider(Provider):
     stars_min, stars_max = coindrop.STARS_MIN, coindrop.STARS_MAX
     months = coindrop.PREMIUM_MONTHS
 
-    supports_uc = True
-
     def __init__(self, api_key: str):
         super().__init__(api_key)
         self.client = CoinDrop(self.api_key)
 
-    uc_game = coindrop.UC_GAME
-    last_diag = ""
-
-    @staticmethod
-    def parse_uc_amount(name: str, amount=None) -> int | None:
-        """UC miqdorini aniqlaydi: `amount` bo'lsa shuni, aks holda nomdan ("60 UC", "325+25 UC", "UC 660")."""
-        try:
-            if amount and int(amount) > 0:
-                return int(amount)
-        except (TypeError, ValueError):
-            pass
-        text = str(name or "").replace("\u00a0", " ")
-        text = re.sub(r"(?<=\d)[ ,.](?=\d{3}\b)", "", text)        # 1 800 / 1,800 -> 1800
-        m = re.search(r"(\d+)\s*\+\s*(\d+)\s*(?:UC|ЮС|УС)", text, re.I)   # 325+25 UC
-        if m:
-            return int(m.group(1)) + int(m.group(2))
-        m = re.search(r"(\d+)\s*(?:UC|ЮС|УС)\b", text, re.I) or re.search(r"\b(?:UC|ЮС|УС)\s*(\d+)", text, re.I)
-        if m:
-            return int(m.group(1))
-        return None  # UC ekanligi aniq bo'lmasa, paketni sotuvga qo'shmaymiz
-
-    async def _uc_game_keys(self) -> list[str]:
-        """Avval standart kalit, bo'lmasa /games ro'yxatidan "pubg" o'yinlari."""
-        keys = [coindrop.UC_GAME]
-        try:
-            for g in await self.client.games():
-                key = str(g.get("key") or g.get("game_key") or "")
-                if key and "pubg" in key.lower() and key not in keys:
-                    keys.append(key)
-        except CoinDropError:
-            pass
-        return keys
-
-    async def uc_list(self, markup: int) -> list[dict]:
-        """PUBG Mobile UC paketlari: [{"uc", "price", "cost", "product_id"}] (so'mda, arzonidan qimmatiga).
-
-        Muvaffaqiyatli bo'lsa `self.uc_game` ishlatilgan o'yin kaliti bo'ladi; bo'sh qolsa `last_diag` sababni aytadi.
-        """
-        notes: list[str] = []
-        rate = None
-        for game in await self._uc_game_keys():
-            try:
-                products = await self.client.products(game)
-            except CoinDropError as exc:
-                notes.append(f"{game}: {exc.human()}")
-                continue
-            if not products:
-                notes.append(f"{game}: mahsulotlar ro'yxati bo'sh. Coindrop javobi: {self.client.last_raw}")
-                continue
-            best: dict[int, dict] = {}
-            skipped = 0
-            for p in products:
-                pid = p.get("id")
-                cost = _num(p.get("price_uzs"))
-                if not cost and _num(p.get("price_usd")):
-                    if rate is None:
-                        try:
-                            rate = _num((await self.client.account()).get("usd_to_uzs")) or 0
-                        except CoinDropError:
-                            rate = 0
-                    cost = _num(p.get("price_usd")) * rate if rate else None
-                uc = self.parse_uc_amount(p.get("name"), p.get("amount"))
-                if pid in (None, "") or not cost or not uc or uc <= 0:
-                    skipped += 1
-                    continue
-                item = {"uc": uc, "price": sale_price(cost, markup), "cost": int(cost), "product_id": str(pid)}
-                if uc not in best or item["cost"] < best[uc]["cost"]:
-                    best[uc] = item
-            if best:
-                self.uc_game = game
-                self.last_diag = ""
-                return [best[k] for k in sorted(best)][:MAX_UC_PACKAGES]
-            sample = products[0]
-            notes.append(f"{game}: {len(products)} ta mahsulot, lekin tanib bo'lmadi "
-                         f"(namuna: nomi={sample.get('name')!r}, narx={sample.get('price_uzs')!r})")
-        self.last_diag = "; ".join(notes) or "mahsulotlar topilmadi"
-        return []
-
     def build_request(self, order) -> dict | None:
-        if order["order_type"] == "uc":
-            player, product_id = (order["recipient"] or "").strip(), (order["product_id"] or "").strip()
-            if not re.match(coindrop.UC_PLAYER_RE, player) or not product_id:
-                return None
-            return {"game_key": self.uc_game, "player_id": player, "product_id": product_id}
         base = super().build_request(order)
         if base is None:
             return None

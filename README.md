@@ -33,13 +33,6 @@ Tugmalarda `icon_custom_emoji_id`, xabarlarda `<tg-emoji>` ishlatiladi (Bot API 
 **Telegram qoidasi:** custom emoji bot xabarlarida faqat bot egasida Telegram Premium bo'lsa ishlaydi.
 Ishlamasa, bot avtomatik oddiy emojiga qaytadi — xato bermaydi.
 
-## 🎮 UC sotish (PUBG Mobile)
-
-UC tizimi Stars/Premium dan **to'liq mustaqil**: o'z API kaliti, o'z avto-yetkazish tugmasi, o'z narxlari va statistikasi.
-`Boshqaruv → 🪙 UC sotish`: «API kalit kiritish» (Coindrop `cd_...`) → «Narxlarni sinxronlash» → «Ustama foiz» → «Sotuvni yoqish».
-Paketni alohida o'zgartirish/o'chirish mumkin. Foydalanuvchi: UC olish → paket → Player ID → tasdiqlash.
-UC buyurtmalar Coindrop `pubg-mobile` orqali avtomatik yetkaziladi; avto-yetkazish o'chiq bo'lsa, buyurtma adminga qo'lda bajarish uchun keladi.
-
 ## 🔌 API provayderlar (avto-yetkazish)
 
 Bot ikkita provayderni qo'llaydi: **Coindrop.uz** (so'mda) va **TgSuperstars** (dollarda, USDT). Tanlash: `Boshqaruv → 🔌 API → Provayder`.
